@@ -47,7 +47,8 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Award, Crosshair, Network, Waypoints, X } from "lucide-react";
+import { Award, Crosshair, Network, Waypoints, X, Download } from "lucide-react";
+import { downloadCsv, csvStamp } from "@/lib/csv";
 
 /* ------------------------------------------------------------------ */
 /* Local vocabulary                                                    */
@@ -765,6 +766,35 @@ export function NetworkScreen() {
         icon={Award}
         sub={`top ${influencers.length} of ${bundle.stats.nodes} · click to locate in graph`}
         bodyClassName="p-3"
+        right={
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-[10px] gap-1"
+            title="Export the influencer board as CSV"
+            onClick={() => {
+              downloadCsv(
+                `tracex-influencers-${csvStamp()}.csv`,
+                ["rank", "handle", "platform", "community", "pagerank", "followers", "weekly_reach", "bot_prob"],
+                influencers.map((inf, i) => [
+                  i + 1,
+                  inf.handle,
+                  inf.platform === "x" ? "X" : "TG",
+                  inf.communityLabel,
+                  inf.pageRank.toFixed(4),
+                  inf.followers,
+                  inf.reach,
+                  inf.botProb.toFixed(2),
+                ])
+              );
+              toast("Influencer board exported", {
+                description: `${influencers.length} accounts · PageRank-ranked · community-tagged.`,
+              });
+            }}
+          >
+            <Download className="size-3" /> CSV
+          </Button>
+        }
       >
         <div className="grid grid-cols-1 gap-x-6 gap-y-1 lg:grid-cols-2">
           {influencers.map((inf, i) => (

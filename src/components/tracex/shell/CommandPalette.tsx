@@ -63,7 +63,7 @@ const PLATFORM_META = {
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
-  const { go, setSelectedTopicId, setPlatform, resetFilters, toggleLanguage, filters, watchlist } = useApp();
+  const { go, setSelectedTopicId, setPlatform, resetFilters, toggleLanguage, filters, watchlist, setReportOpen } = useApp();
   const { resolvedTheme, setTheme } = useTheme();
 
   const claims = getClaims({ ...filters, query: "" });
@@ -265,9 +265,8 @@ export function CommandPalette() {
             <CommandItem
               value="generate report export"
               onSelect={() => {
-                go("alerts");
+                setReportOpen(true);
                 setOpen(false);
-                toast("Report module open — use Generate report", { description: "Alerts & Reports → Analyst reports" });
               }}
             >
               <FileDown className="size-3.5 text-muted-foreground" />

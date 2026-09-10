@@ -22,7 +22,6 @@ import { Panel, Badge, Chip, LiveDot, MonoTag, SeverityDot, Taxonomy, type Tone 
 import { KpiCard } from "../common/KpiCard";
 import { ScreenHeader } from "../common/ScreenHeader";
 import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
-import { ReportModal } from "../modals/ReportModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -532,12 +531,11 @@ function RuleBuilder() {
 /* ------------------------------------------------------------------ */
 
 export function AlertsScreen() {
-  const { filters } = useApp();
+  const { filters, setReportOpen } = useApp();
   const ready = useRefresh("alerts");
 
   /* local alert state so triage mutations persist */
   const [alerts, setAlerts] = useState<IntelligenceAlert[]>(() => getAlerts());
-  const [reportOpen, setReportOpen] = useState(false);
 
   const acknowledge = (id: string) => {
     setAlerts((prev) => prev.map((a) => (a.id === id && a.status === "New" ? { ...a, status: "Acknowledged" } : a)));
@@ -651,8 +649,6 @@ export function AlertsScreen() {
         Alert engine: velocity z-scores · bot-cluster sync detection · claim re-emergence matching · sentiment drift ·
         window {windowLabel} · generated {relTime(NOW)} ago · prototype data
       </div>
-
-      <ReportModal open={reportOpen} onOpenChange={setReportOpen} />
     </div>
   );
 }

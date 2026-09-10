@@ -257,6 +257,37 @@
   animation: pulse-ring 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* ---- Claim focus flash: outline pulse when a dossier is opened via
+       palette / deep-link / list click (Misinfo extraction list) ---- */
+@keyframes claim-flash-kf {
+  0% {
+    box-shadow:
+      inset 3px 0 0 var(--primary),
+      0 0 0 0 color-mix(in srgb, var(--primary) 55%, transparent);
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+  }
+  100% {
+    box-shadow:
+      inset 3px 0 0 var(--primary),
+      0 0 0 10px transparent;
+    background: transparent;
+  }
+}
+.claim-flash {
+  animation: claim-flash-kf 1.6s ease-out 1;
+}
+
+/* ---- Data-table row focus affordance: hairline rail on hover ---- */
+tbody tr {
+  transition: background-color 120ms ease;
+}
+
+/* ---- Sheet/panel entrance: subtle scanline veil ---- */
+[data-slot="sheet-overlay"],
+[data-slot="dialog-overlay"] {
+  backdrop-filter: blur(2px) saturate(0.9);
+}
+
 /* ---- Scanline sweep for boot splash ---- */
 @keyframes scanline {
   0% {
@@ -300,7 +331,8 @@ section.bg-card:hover {
   }
   .pulse-dot,
   .edge-flow,
-  .scanline {
+  .scanline,
+  .claim-flash {
     animation: none !important;
   }
 }

@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { downloadCsv, csvStamp } from "@/lib/csv";
 
 /* ---------------- scatter dot shapes ---------------- */
 
@@ -234,9 +235,39 @@ export function BotScreen() {
               variant="outline"
               size="sm"
               className="h-7 text-[11px] gap-1.5"
+              title="Export the visible flagged-account table as CSV"
               onClick={() => {
-                toast("Watchlist exported", {
-                  description: `${fmtFull(stats.flaggedAccounts)} flagged accounts attached to the intel brief (mock).`,
+                downloadCsv(
+                  `tracex-flagged-accounts-${csvStamp()}.csv`,
+                  [
+                    "handle",
+                    "id",
+                    "platform",
+                    "bot_prob",
+                    "posts_per_day",
+                    "account_age_days",
+                    "duplicate_pct",
+                    "timing_anomaly",
+                    "cluster",
+                    "cluster_size",
+                    "first_seen",
+                  ],
+                  rows.map((b) => [
+                    b.handle,
+                    b.id,
+                    b.platform === "x" ? "X" : "TG",
+                    b.botProb.toFixed(2),
+                    b.postsPerDay,
+                    b.accountAgeDays,
+                    b.dupPct,
+                    b.timingAnomaly.toFixed(2),
+                    b.clusterId ?? "—",
+                    b.clusterSize,
+                    new Date(b.firstSeen).toISOString(),
+                  ])
+                );
+                toast("Flagged accounts exported", {
+                  description: `${rows.length} rows · botProb ≥ 0.50 · ${scopeLabel} scope.`,
                 });
               }}
             >

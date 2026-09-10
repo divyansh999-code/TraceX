@@ -5,7 +5,7 @@
  * bot-correlation scoring and cross-platform spread mapping.
  * Two-column operating view: extraction list + selected claim dossier.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/app-state";
 import { getClaims, getTopicById, NOW, type Claim, type ClaimStatus } from "@/lib/mock";
 import { fmtCompact, fmtDateIST, fmtFull, relTime, riskTone } from "@/lib/fmt";
@@ -337,6 +337,22 @@ export function MisinfoScreen() {
     [claims, selectedId, filtered]
   );
 
+  /* Deep-link / palette focus: when a claim becomes selected, scroll it into
+   * view inside the extraction list and flash an outline pulse. DOM-only side
+   * effect (no setState) — fires for user clicks and programmatic jumps alike. */
+  useEffect(() => {
+    if (!selectedId) return;
+    const el = document.querySelector<HTMLElement>(`[data-claim-id="${CSS.escape(selectedId)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    el.classList.remove("claim-flash");
+    /* restart the animation even when re-selecting the same claim */
+    void el.offsetWidth;
+    el.classList.add("claim-flash");
+    const t = setTimeout(() => el.classList.remove("claim-flash"), 1_800);
+    return () => clearTimeout(t);
+  }, [selectedId]);
+
   /* KPIs */
   const total = claims.length;
   const falseDisputed = claims.filter((c) => c.status === "False" || c.status === "Disputed");
@@ -506,6 +522,7 @@ export function MisinfoScreen() {
                   <button
                     key={c.id}
                     type="button"
+                    data-claim-id={c.id}
                     onClick={() => setSelectedId(c.id)}
                     className={cn(
                       "w-full text-left border-l-2 px-4 py-2.5 transition-colors cursor-pointer",

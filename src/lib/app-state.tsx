@@ -9,6 +9,13 @@
  * - URL hash deep-links: `#/trends`, `#/trends/kisan-andolan`,
  *   `#/misinfo/claim:CLM-004` — shareable, survives refresh.
  * - `selectedClaimId` so the command palette can open a claim dossier.
+ *
+ * v0.11 additions:
+ * - History-aware navigation: go() pushes history entries, so browser
+ *   Back/Forward moves between console screens (popstate listener restores
+ *   state from the hash instead of leaving the app).
+ * - `reportOpen` — the intelligence report modal is now global state, so the
+ *   ⌘K palette (and any screen) can open it directly.
  */
 import {
   createContext,
@@ -16,9 +23,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+
 import type { Filters, Platform, RangeKey, ScreenId } from "./mock/types";
 
 interface AppState {
@@ -37,6 +46,10 @@ interface AppState {
   setSelectedTopicId: (id: string | null) => void;
   selectedClaimId: string | null;
   setSelectedClaimId: (id: string | null) => void;
+
+  /** Global intelligence-report modal (mounted at shell level). */
+  reportOpen: boolean;
+  setReportOpen: (open: boolean) => void;
 
   /** Starred narratives — persisted across sessions. */
   watchlist: string[];
@@ -153,12 +166,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(INITIAL.topicId);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(INITIAL.claimId);
   const [watchlist, setWatchlist] = useState<string[]>(INITIAL.watchlist);
+  const [reportOpen, setReportOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   /* Persist snapshot + mirror navigation into the URL hash.
+   *
+   * History strategy (v0.11): the first write normalises the URL silently
+   * (replaceState); every later in-app navigation PUSHES a history entry,
+   * which is what makes browser Back/Forward walk through console screens.
+   * popstate-driven updates converge on a hash that already matches the
+   * restored state, so the effect never re-pushes for those.
    * (Effect only WRITES — never setState — so it stays lint-clean.) */
+  const firstHashWriteRef = useRef(true);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const parts: string[] = [screen];
@@ -166,8 +187,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (screen === "misinfo" && selectedClaimId) parts.push(`claim:${selectedClaimId}`);
     const nextHash = `#/${parts.join("/")}`;
     if (window.location.hash !== nextHash) {
-      window.history.replaceState(null, "", nextHash);
+      if (firstHashWriteRef.current) {
+        window.history.replaceState(null, "", nextHash);
+      } else {
+        window.history.pushState(null, "", nextHash);
+      }
     }
+    firstHashWriteRef.current = false;
     try {
       const snap: PersistedSnapshot = { filters, watchlist };
       window.localStorage.setItem(STORE_KEY, JSON.stringify(snap));
@@ -175,6 +201,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       /* private mode / quota — persistence is best-effort */
     }
   }, [screen, selectedTopicId, selectedClaimId, filters, watchlist]);
+
+  /* Browser Back/Forward + manual hash edits: restore console state from
+   * the target hash. setState lives in the event handler (not an effect),
+   * and a bare/foreign hash is normalised to #/overview BEFORE setState so
+   * the write-effect above sees a matching hash and never re-pushes. */
+  useEffect(() => {
+    const onPopState = () => {
+      const target = parseHash();
+      if (!target) {
+        window.history.replaceState(null, "", "#/overview");
+        setScreen("overview");
+        setSelectedTopicId(null);
+        setSelectedClaimId(null);
+      } else {
+        setScreen(target.screen);
+        setSelectedTopicId(target.topicId ?? null);
+        setSelectedClaimId(target.claimId ?? null);
+      }
+      window.scrollTo({ top: 0 });
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const setPlatform = useCallback(
     (p: Platform) => {
@@ -255,6 +304,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSelectedTopicId,
       selectedClaimId,
       setSelectedClaimId,
+      reportOpen,
+      setReportOpen,
       watchlist,
       toggleWatchlist,
       isWatched: (topicId: string) => watchlist.includes(topicId),
@@ -273,6 +324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       go,
       selectedTopicId,
       selectedClaimId,
+      reportOpen,
       watchlist,
       toggleWatchlist,
       refreshKey,

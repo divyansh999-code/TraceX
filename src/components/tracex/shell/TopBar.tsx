@@ -11,9 +11,10 @@ import { LiveDot, Chip } from "../common/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Search, Moon, SunMedium, RotateCw, Send, CalendarClock, X as XIcon } from "lucide-react";
+import { Search, Moon, SunMedium, RotateCw, Send, CalendarClock, X as XIcon, Volume2, VolumeX } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { isAudioEnabled, setAudioEnabled, playCriticalCue } from "@/lib/alert-cue";
 import { CommandPalette } from "./CommandPalette";
 import { AlertsBell } from "./AlertsBell";
 import type { Platform, RangeKey, ScreenId } from "@/lib/mock/types";
@@ -81,6 +82,9 @@ export function TopBar() {
   const [searchText, setSearchText] = useState(filters.query);
   const [customOpen, setCustomOpen] = useState(false);
   const [customValue, setCustomValue] = useState(String(filters.customDays));
+  /* audio cue toggle — lazy client-side init (TopBar mounts post-boot-splash,
+     so the initializer never runs during SSR) */
+  const [audioOn, setAudioOn] = useState(() => (typeof window !== "undefined" && isAudioEnabled()));
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onSearch = (v: string) => {
@@ -199,6 +203,29 @@ export function TopBar() {
           <span className="hidden md:inline font-mono text-[11px] tnum text-muted-foreground tabular-nums">
             {now ? fmtClockIST(now) : "--:--:--"} IST
           </span>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !audioOn;
+              setAudioOn(next);
+              setAudioEnabled(next);
+              if (next) {
+                playCriticalCue();
+                toast("Critical-alert audio armed", { description: "Chirp on high/critical feed arrivals." });
+              }
+            }}
+            aria-pressed={audioOn}
+            className={cn(
+              "size-7 rounded-md border flex items-center justify-center transition-colors cursor-pointer",
+              audioOn
+                ? "border-primary/50 text-primary bg-primary/10"
+                : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40"
+            )}
+            title={audioOn ? "Critical alert audio: armed" : "Critical alert audio: muted"}
+            aria-label="Toggle critical alert audio"
+          >
+            {audioOn ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+          </button>
           <button
             type="button"
             onClick={() => setTheme(resolvedTheme === "light" ? "dark" : "light")}

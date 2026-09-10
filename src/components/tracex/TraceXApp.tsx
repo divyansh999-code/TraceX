@@ -3,15 +3,20 @@
 /**
  * TraceX application shell: sidebar spine + command bar + module canvas.
  * Boot splash gates first paint; module switching animates content.
+ *
+ * v0.11: shell-level mounts — global report modal (palette-accessible),
+ * critical-alert audio cue listener, dynamic document title.
  */
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppProvider, useApp } from "@/lib/app-state";
+import { bindAlertCue } from "@/lib/alert-cue";
 import { Sidebar } from "./shell/Sidebar";
 import { TopBar } from "./shell/TopBar";
 import { StatusBar } from "./shell/StatusBar";
 import { BootSplash } from "./shell/BootSplash";
 import { HotkeyHelp } from "./shell/HotkeyHelp";
+import { ReportModal } from "./modals/ReportModal";
 import { OverviewScreen } from "./screens/OverviewScreen";
 import { TrendsScreen } from "./screens/TrendsScreen";
 import { SentimentScreen } from "./screens/SentimentScreen";
@@ -115,20 +120,50 @@ function ModuleHotkeys() {
   return null;
 }
 
+/** Critical-alert audio cue — reacts to live-feed dispatches (see lib/alert-cue). */
+function AlertCueListener() {
+  useEffect(() => bindAlertCue(), []);
+  return null;
+}
+
+/** Dynamic tab title — "Module · TraceX" telemetry breadcrumb. */
+const TITLE_LABEL: Record<ScreenId, string> = {
+  overview: "Mission Control",
+  trends: "Trend Explorer",
+  sentiment: "Sentiment & Emotion",
+  demographics: "Demographics",
+  network: "Interaction Graph",
+  bots: "Bot Detection",
+  misinfo: "Misinformation Radar",
+  alerts: "Alerts & Reports",
+};
+function DocumentTitle() {
+  const { screen } = useApp();
+  useEffect(() => {
+    document.title = `${TITLE_LABEL[screen]} · TraceX`;
+  }, [screen]);
+  return null;
+}
+
 function Console() {
+  const { reportOpen, setReportOpen } = useApp();
   return (
-    <div className="flex min-h-screen min-w-0">
+    <div className="flex min-h-screen min-w-0 tracex-root">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         <TopBar />
         <MobileNav />
         <main className="flex-1 px-4 py-5 min-w-0 w-full">
           <ModuleHotkeys />
+          <AlertCueListener />
+          <DocumentTitle />
           <HotkeyHelp />
           <ModuleCanvas />
         </main>
         <StatusBar />
       </div>
+      {/* global intelligence report — openable from any screen via ⌘K */}
+      <ReportModal open={reportOpen} onOpenChange={setReportOpen} />
     </div>
   );
 }

@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 import { Panel, Badge, Delta, ScoreBar, Legend, Chip, MetricRow, Taxonomy } from "../common/primitives";
 import { Sparkline } from "../common/Sparkline";
+import { HeatCalendar } from "../common/HeatCalendar";
 import { ScreenHeader } from "../common/ScreenHeader";
 import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
 import { useRefresh, PanelSkeleton } from "../common/Skeletons";
@@ -139,11 +140,23 @@ function TopicDrill({
   onSelectTopic: (id: string) => void;
 }) {
   const chartTheme = useChartTheme();
-  const { watchlist, toggleWatchlist } = useApp();
+  const { watchlist, toggleWatchlist, filters } = useApp();
   const posts = getSamplePosts(topic.id);
   const related = topic.relatedTopics
     .map((id) => getTopicById(id))
     .filter((t): t is Topic => t !== null);
+  /* 30-day intensity strip — always daily-bucketed regardless of the active
+     console range, so the drill-down shows the full month context. */
+  const heatDays = useMemo(
+    () =>
+      getTopicSeries(topic, { ...filters, range: "30d" }).map((p) => ({
+        t: p.t,
+        total: p.total,
+        spike: p.spike,
+        label: p.label,
+      })),
+    [topic, filters]
+  );
 
   const xVol = series.reduce((a, p) => a + p.x, 0);
   const tgVol = series.reduce((a, p) => a + p.telegram, 0);
@@ -209,6 +222,19 @@ function TopicDrill({
             value={<span className={riskTextClass(riskTone(topic.risk))}>{fmtScore(topic.risk)}</span>}
           />
           <MetricRow label="Languages" value={langs || "—"} />
+        </div>
+
+        {/* 30-day intensity strip */}
+        <div className="border border-border rounded-md p-3">
+          <div className="flex items-center justify-between">
+            <Taxonomy>30-day intensity</Taxonomy>
+            <span className="font-mono text-[9px] tnum text-muted-foreground/60">
+              {heatDays.filter((d) => d.spike).length} spikes
+            </span>
+          </div>
+          <div className="mt-2">
+            <HeatCalendar days={heatDays} compact />
+          </div>
         </div>
 
         {/* platform split donut + velocity mini chart */}

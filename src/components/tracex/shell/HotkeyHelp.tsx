@@ -42,6 +42,7 @@ const SHORTCUTS: { group: string; items: Hotkey[] }[] = [
       { keys: ["★"], label: "Star a narrative in the trends table to pin it to the watchlist" },
       { keys: ["↵"], label: "Execute the highlighted palette entry" },
       { keys: ["↑", "↓"], label: "Move through palette results" },
+      { keys: ["←", "→"], label: "Browser Back / Forward — walk console history" },
     ],
   },
 ];

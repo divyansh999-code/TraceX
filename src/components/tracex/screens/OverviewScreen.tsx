@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/app-state";
+import { dispatchAlertCue } from "@/lib/alert-cue";
 import {
   getKpis,
   getVolumeSeries,
@@ -115,6 +116,9 @@ function LiveAlertFeed() {
           id: `ALR-L${9000 + n}`,
           t: Date.now(),
         };
+        /* SOC audio cue — chirp when a high/critical alert lands (armed via
+           the volume toggle in the top bar; no-op when muted) */
+        dispatchAlertCue(t.severity);
         return [fresh, ...prev].slice(0, 9);
       });
     }, 22_000);
