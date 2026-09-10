@@ -5,7 +5,7 @@
  * bot-correlation scoring and cross-platform spread mapping.
  * Two-column operating view: extraction list + selected claim dossier.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/app-state";
 import { getClaims, getTopicById, NOW, type Claim, type ClaimStatus } from "@/lib/mock";
 import { fmtCompact, fmtDateIST, fmtFull, relTime, riskTone } from "@/lib/fmt";
@@ -38,14 +38,18 @@ import {
 import {
   AlertTriangle,
   Bot,
+  Check,
   FileCheck,
   FileSearch,
   Gauge,
+  NotebookPen,
   Radar,
   SearchX,
   ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { downloadCsv, csvStamp } from "@/lib/csv";
 import { toast } from "sonner";
 
 const WINDOW_LABEL: Record<string, string> = {
@@ -84,6 +88,85 @@ const STATUS_FILTERS: StatusFilter[] = ["all", "Verified", "Disputed", "Unverifi
 /* ------------------------------------------------------------------ */
 /* Claim dossier — detail column                                       */
 /* ------------------------------------------------------------------ */
+
+/** Analyst notebook — free-form annotation attached to a claim, persisted
+ *  in the session store (survives reload; shared across dossiers).
+ *  Remounts per claim (keyed by claim id) so the draft initialises cleanly
+ *  without setState-in-effect. Saves are debounced 500ms + on blur. */
+function ClaimNotebook({ claimId }: { claimId: string }) {
+  const { claimNotes, setClaimNote } = useApp();
+  const saved = claimNotes[claimId]?.text ?? "";
+  const [draft, setDraft] = useState(saved);
+  const [dirty, setDirty] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const commit = (text: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setClaimNote(claimId, text);
+    setDirty(false);
+  };
+
+  const onChange = (v: string) => {
+    setDraft(v);
+    setDirty(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => commit(v), 500);
+  };
+
+  /* flush pending edits if the component unmounts mid-debounce */
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    []
+  );
+
+  const updatedAt = claimNotes[claimId]?.updatedAt;
+
+  return (
+    <div className="mt-4 pt-3 border-t border-border/60">
+      <div className="flex items-center gap-2 mb-2">
+        <NotebookPen className="size-3.5 text-primary" />
+        <Taxonomy>Analyst notebook</Taxonomy>
+        <span className="ml-auto font-mono text-[9px] text-muted-foreground/70">
+          {dirty ? "saving…" : updatedAt ? `saved ${relTime(updatedAt, NOW)} ago` : "empty"}
+        </span>
+        {draft.trim() !== "" && (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 font-mono text-[9px]",
+              dirty ? "text-muted-foreground" : "text-signal-green"
+            )}
+          >
+            <Check className="size-2.5" />
+            {dirty ? "draft" : "synced"}
+          </span>
+        )}
+      </div>
+      <Textarea
+        value={draft}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => dirty && commit(draft)}
+        placeholder="Triage notes, escalation decisions, cross-references… (auto-saves, persists across sessions)"
+        className="min-h-20 text-xs bg-background font-mono leading-relaxed resize-y"
+        maxLength={2000}
+        aria-label={`Analyst notes for claim ${claimId}`}
+      />
+      <div className="flex items-center justify-between mt-1.5">
+        <span className="font-mono text-[9px] tnum text-muted-foreground/60">{draft.length}/2000</span>
+        {draft !== saved && (
+          <button
+            type="button"
+            onClick={() => commit(draft)}
+            className="text-[10px] font-mono uppercase tracking-wider text-primary hover:text-primary/80 transition-colors cursor-pointer"
+          >
+            Save now
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ClaimDossier({ claim }: { claim: Claim }) {
   const { go } = useApp();
@@ -304,6 +387,9 @@ function ClaimDossier({ claim }: { claim: Claim }) {
         />
         <MetricRow label="Tracked events" value={String(claim.events.length)} sub="platform hops" />
       </div>
+
+      {/* analyst notebook — persisted per-claim annotations (v0.12) */}
+      <ClaimNotebook key={claim.id} claimId={claim.id} />
     </div>
   );
 }
@@ -313,7 +399,7 @@ function ClaimDossier({ claim }: { claim: Claim }) {
 /* ------------------------------------------------------------------ */
 
 export function MisinfoScreen() {
-  const { filters, selectedClaimId, setSelectedClaimId } = useApp();
+  const { filters, selectedClaimId, setSelectedClaimId, claimNotes } = useApp();
   const ready = useRefresh("misinfo");
 
   const claims = useMemo(() => getClaims(filters), [filters]);
@@ -493,8 +579,50 @@ export function MisinfoScreen() {
           sub="sorted by risk"
           bodyClassName="p-0"
           right={
-            <span className="font-mono text-[10px] tnum text-muted-foreground">
-              {filtered.length}/{total}
+            <span className="flex items-center gap-2 font-mono text-[10px] tnum text-muted-foreground">
+              <span>{filtered.length}/{total}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[10px] gap-1"
+                title="Export the filtered claims list as CSV"
+                onClick={() => {
+                  downloadCsv(
+                    `tracex-claims-${csvStamp()}.csv`,
+                    [
+                      "claim_id",
+                      "status",
+                      "narrative",
+                      "text",
+                      "translation",
+                      "risk",
+                      "bot_correlation",
+                      "total_reach",
+                      "spread_hours",
+                      "first_seen",
+                      "analyst_note",
+                    ],
+                    filtered.map((c) => [
+                      c.id,
+                      c.status,
+                      getTopicById(c.topicId)?.label ?? c.topicId,
+                      c.text,
+                      c.translation ?? "",
+                      c.risk.toFixed(2),
+                      c.botCorrelation.toFixed(2),
+                      c.totalReach,
+                      c.spreadHours,
+                      fmtDateIST(c.firstSeen),
+                      claimNotes[c.id]?.text ?? "",
+                    ])
+                  );
+                  toast("Claims list exported", {
+                    description: `${filtered.length} claims → CSV (current risk/status filters + notes).`,
+                  });
+                }}
+              >
+                CSV
+              </Button>
             </span>
           }
         >
@@ -538,6 +666,12 @@ export function MisinfoScreen() {
                           <span className="font-mono text-[10px] tnum text-muted-foreground/70 truncate">
                             {getTopicById(c.topicId)?.label ?? "—"}
                           </span>
+                          {claimNotes[c.id] && (
+                            <NotebookPen
+                              className="size-3 text-primary shrink-0"
+                              aria-label="has analyst note"
+                            />
+                          )}
                         </div>
                         <p className="mt-1.5 text-xs text-foreground leading-snug line-clamp-2">{c.text}</p>
                         {c.translation && (

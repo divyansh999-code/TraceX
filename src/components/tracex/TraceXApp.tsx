@@ -126,7 +126,8 @@ function AlertCueListener() {
   return null;
 }
 
-/** Dynamic tab title — "Module · TraceX" telemetry breadcrumb. */
+/** Dynamic tab title — "Module · TraceX" telemetry breadcrumb, suffixed with
+ *  the live unread count (shared alert bus) so background tabs flag triage. */
 const TITLE_LABEL: Record<ScreenId, string> = {
   overview: "Mission Control",
   trends: "Trend Explorer",
@@ -138,10 +139,13 @@ const TITLE_LABEL: Record<ScreenId, string> = {
   alerts: "Alerts & Reports",
 };
 function DocumentTitle() {
-  const { screen } = useApp();
+  const { screen, alertUnread } = useApp();
   useEffect(() => {
-    document.title = `${TITLE_LABEL[screen]} · TraceX`;
-  }, [screen]);
+    document.title =
+      alertUnread > 0
+        ? `(${alertUnread}) ${TITLE_LABEL[screen]} · TraceX`
+        : `${TITLE_LABEL[screen]} · TraceX`;
+  }, [screen, alertUnread]);
   return null;
 }
 

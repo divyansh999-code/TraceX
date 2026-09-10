@@ -282,6 +282,44 @@ tbody tr {
   transition: background-color 120ms ease;
 }
 
+/* ---- Live-feed row arrival: fresh alerts slide in with a fading signal tint.
+       Rows are keyed by alert id, so only NEW arrivals mount (and animate). ---- */
+@keyframes feed-arrival-kf {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+  }
+  60% {
+    opacity: 1;
+    background: color-mix(in srgb, var(--primary) 6%, transparent);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    background: transparent;
+  }
+}
+.feed-arrival {
+  animation: feed-arrival-kf 700ms ease-out 1;
+}
+
+/* ---- Bell unread badge: pops when the count ticks up (keyed remount) ---- */
+@keyframes bell-pop-kf {
+  0% {
+    transform: scale(0.55);
+  }
+  55% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.bell-pop {
+  animation: bell-pop-kf 320ms cubic-bezier(0.2, 1.4, 0.4, 1) 1;
+}
+
 /* ---- Sheet/panel entrance: subtle scanline veil ---- */
 [data-slot="sheet-overlay"],
 [data-slot="dialog-overlay"] {
@@ -332,7 +370,9 @@ section.bg-card:hover {
   .pulse-dot,
   .edge-flow,
   .scanline,
-  .claim-flash {
+  .claim-flash,
+  .feed-arrival,
+  .bell-pop {
     animation: none !important;
   }
 }

@@ -67,8 +67,8 @@ export function KpiCard({
       )}
     >
       <span className={cn("absolute left-0 top-4 bottom-4 w-[3px] rounded-r-sm", toneBar)} />
-      <div className="flex items-start justify-between gap-2">
-        <span className="taxonomy text-muted-foreground pt-0.5">{label}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="taxonomy text-muted-foreground">{label}</span>
         {Icon && <Icon className={cn("size-4 shrink-0", toneText)} strokeWidth={1.75} />}
       </div>
       <div className="mt-2.5 flex items-baseline gap-2 min-w-0">

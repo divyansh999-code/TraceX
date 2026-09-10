@@ -2,12 +2,13 @@
 
 /**
  * Live alert bell for the top command bar.
- * Unread badge tracks unacknowledged critical/high alerts; the popover
- * feed jumps straight to the implicated module.
+ * Consumes the SHARED live-alert bus (app-state): the shell-level feed
+ * singleton publishes arrivals there, so the bell badge, the Overview feed
+ * and the tab-title unread count render one stream. Read-state is likewise
+ * global — opening the bell or the triage console clears the same badge.
  */
-import { useMemo, useState } from "react";
 import { useApp } from "@/lib/app-state";
-import { getAlerts, NOW, type AlertType, type IntelligenceAlert } from "@/lib/mock";
+import { NOW, type AlertType } from "@/lib/mock";
 import { relTime } from "@/lib/fmt";
 import { cn } from "@/lib/utils";
 import { SeverityDot, Badge, Taxonomy, type Tone } from "../common/primitives";
@@ -23,34 +24,18 @@ const TYPE_META: Record<AlertType, { label: string; tone: Tone }> = {
   "sentiment-shift": { label: "sentiment", tone: "cyan" },
 };
 
-/** Alerts that warrant an unread badge — critical/high and still New. */
-function isHot(a: IntelligenceAlert): boolean {
-  return a.status === "New" && (a.severity === "critical" || a.severity === "high");
-}
-
 export function AlertsBell() {
-  const { go } = useApp();
-  const [open, setOpen] = useState(false);
-  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
+  const { go, alertsFeed: feed, alertUnread: unread, markAlertsRead } = useApp();
   const now = useNow(30_000);
 
-  const alerts = useMemo(() => getAlerts(), []);
-  const feed = useMemo(() => [...alerts].sort((a, b) => b.t - a.t).slice(0, 10), [alerts]);
-  const unread = feed.filter((a) => isHot(a) && !readIds.has(a.id)).length;
-
-  const markAllRead = () => setReadIds(new Set(feed.map((a) => a.id)));
-
-  const jump = (a: IntelligenceAlert) => {
-    setOpen(false);
-    if (a.linkScreen) go(a.linkScreen);
+  const jump = (screen: ScreenId | undefined) => {
+    if (screen) go(screen);
   };
 
   return (
     <Popover
-      open={open}
       onOpenChange={(o) => {
-        setOpen(o);
-        if (o) markAllRead();
+        if (o) markAlertsRead(feed.map((a) => a.id));
       }}
     >
       <PopoverTrigger asChild>
@@ -63,8 +48,9 @@ export function AlertsBell() {
           <Bell className="size-3.5" />
           {unread > 0 && (
             <span
+              key={unread}
               className={cn(
-                "absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 rounded-[3px] flex items-center justify-center",
+                "bell-pop absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 rounded-[3px] flex items-center justify-center",
                 "bg-signal-red text-white font-mono text-[8px] font-bold tnum leading-none",
                 "shadow-[0_0_0_2px_var(--background)]"
               )}
@@ -87,21 +73,18 @@ export function AlertsBell() {
             <button
               key={a.id}
               type="button"
-              onClick={() => jump(a)}
+              onClick={() => jump(a.linkScreen)}
               className={cn(
-                "w-full text-left px-3 py-2 border-b border-border/50 last:border-0 transition-colors",
+                "w-full text-left px-3 py-2 border-b border-border/50 last:border-0 transition-colors feed-arrival",
                 a.linkScreen ? "hover:bg-accent cursor-pointer" : "cursor-default"
               )}
-              title={a.linkScreen ? `Open ${a.linkScreen} module` : a.title}
+              title={a.linkScreen ? `Open ${a.linkScreen} module — ${a.detail}` : a.detail}
             >
               <div className="flex items-center gap-1.5">
                 <SeverityDot severity={a.severity} />
                 <span className="text-[11px] font-medium text-foreground truncate flex-1 min-w-0">
                   {a.title}
                 </span>
-                {isHot(a) && !readIds.has(a.id) && a.status === "New" && (
-                  <span className="size-1.5 rounded-[2px] bg-signal-red shrink-0" aria-label="unread" />
-                )}
                 <span className="font-mono text-[9px] tnum text-muted-foreground/70 shrink-0">
                   {relTime(a.t, now ? now.getTime() : NOW)} ago
                 </span>
@@ -116,7 +99,7 @@ export function AlertsBell() {
         <div className="flex items-center justify-between px-3 py-2 border-t border-border">
           <button
             type="button"
-            onClick={markAllRead}
+            onClick={() => markAlertsRead(feed.map((a) => a.id))}
             className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             <CheckCheck className="size-3" /> Mark all read
@@ -124,7 +107,6 @@ export function AlertsBell() {
           <button
             type="button"
             onClick={() => {
-              setOpen(false);
               go("alerts" as ScreenId);
             }}
             className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-primary hover:text-primary/80 transition-colors cursor-pointer"

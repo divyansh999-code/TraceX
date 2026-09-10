@@ -42,6 +42,7 @@ import {
   Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { downloadCsv, csvStamp } from "@/lib/csv";
 import { toast } from "sonner";
 
 /* ---------------- deterministic cohort reweighting ---------------- */
@@ -193,6 +194,30 @@ export function DemographicsScreen() {
           <div className="flex items-center gap-2">
             <Badge tone="cyan" dot>{scopeLabel}</Badge>
             <Badge tone="green" dot>k ≥ 50</Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[11px] gap-1.5"
+              title="Export the anonymised cohort tables as CSV"
+              onClick={() => {
+                const rows: (string | number)[][] = [
+                  ...demo.states.map((s) => ["state", s.state, s.share.toFixed(1), s.volume]),
+                  ...demo.languages.map((l) => ["language", l.label, l.share.toFixed(1), ""]),
+                  ...demo.ages.map((a) => ["age_bracket", a.bracket, a.share.toFixed(1), ""]),
+                  ...demo.interests.map((it) => ["interest", it.label, it.share, ""]),
+                ];
+                downloadCsv(
+                  `tracex-cohorts-${csvStamp()}.csv`,
+                  ["dimension", "label", "share_pct", "volume"],
+                  rows
+                );
+                toast("Cohort tables exported", {
+                  description: `${rows.length} anonymised rows → CSV (states · languages · ages · interests).`,
+                });
+              }}
+            >
+              CSV
+            </Button>
             <Button
               variant="outline"
               size="sm"

@@ -1,0 +1,262 @@
+     1→     1→# TraceX — Social Intelligence & Information Flow Analytics (SIH 2026 · PS 26152)
+     2→     2→
+     3→     3→High-fidelity interactive frontend prototype. Dark "Signal Intelligence Console"
+     4→     4→aesthetic. NO real backend — all data from the deterministic mock layer.
+     5→     5→
+     6→     6→## Project status
+     7→     7→
+     8→     8→- Next.js 16 App Router, TypeScript, Tailwind CSS 4, shadcn/ui, recharts,
+     9→     9→  lucide-react, framer-motion, d3-force (custom SVG force graph).
+    10→    10→- Dev server: `bun run dev` on port 3000 (already running, logs in dev.log).
+    11→    11→- Single user route: `/` (src/app/page.tsx → TraceXApp).
+    12→    12→- Theme: next-themes, class strategy, DARK default. Fonts: Newsreader
+    13→    13→  (display, `font-display`), IBM Plex Sans (body), JetBrains Mono (data).
+    14→    14→
+    15→    15→## Foundation (Task 2 — COMPLETE)
+    16→    16→
+    17→    17→### Files
+    18→    18→- `src/app/globals.css` — design tokens. Colors via CSS vars: `--primary`
+    19→    19→  (#E8823A amber), signal-green #3EAF7C, signal-red #D9564F, signal-amber
+    20→    20→  #D9A441, signal-cyan #5FA1C4, signal-violet #A78BFA. Surfaces: bg #0A0E14,
+    21→    21→  card #12161F, elevated/popover #171C27, border #232838. Tailwind classes:
+    22→    22→  `text-signal-green`, `bg-signal-red/10`, `text-primary`, etc. Utilities:
+    23→    23→  `.taxonomy` (uppercase 11px label), `.tnum`, `.edge-flow`, `.pulse-dot`.
+    24→    24→- `src/lib/mock/*` — deterministic data layer (seeded RNG):
+    25→    25→  - `index.ts` public API: `getVolumeSeries(filters)`, `getKpis(filters)`,
+    26→    26→    `getTopicSeries(topic, filters)`, `effectiveTopics(filters)`,
+    27→    27→    `getEmotions(filters)`, `getTopicSentimentTable(filters)`,
+    28→    28→    `getSentimentShifts(filters)`, `getClaims(filters)`, `getNetwork(filters)`,
+    29→    29→    `getInfluencers(filters, n)`, `getPropagation(topicId)`, `getBots(filters)`,
+    30→    30→    `getAlerts()`, `getSamplePosts(topicId)`, `getTopicById(id)`,
+    31→    31→    `DEMOGRAPHICS`, `LANGUAGES`, `TOPICS`, `NOW`.
+    32→    32→  - `types.ts` — ALL shared types (Filters, Topic, VolumePoint, Kpis, Claim,
+    33→    33→    IntelligenceAlert, NetNode/NetEdge, BotAccount/BotCluster, …).
+    34→    34→- `src/lib/app-state.tsx` — `AppProvider` + `useApp()`:
+    35→    35→  `filters` (+setPlatform/setRange/setCustomDays/toggleLanguage/setQuery),
+    36→    36→  `screen`, `go(screen, {topicId})`, `selectedTopicId`, `refreshKey`.
+    37→    37→- `src/lib/fmt.ts` — fmtCompact, fmtFull, fmtNet, fmtSigned, relTime,
+    38→    38→  fmtClockIST, fmtDateIST, riskTone, sentimentTone.
+    39→    39→
+    40→    40→### Shared components (`src/components/tracex/common/`)
+    41→    41→- `primitives.tsx`: `Panel` (title/sub/icon/right/dense/scroll), `Taxonomy`,
+    42→    42→  `MonoTag`, `Badge tone={green|amber|red|cyan|orange|violet|slate|neutral}`,
+    43→    43→  `SeverityDot`, `Delta` (value,invert), `ScoreBar` (0–1 risk bar),
+    44→    44→  `Legend`, `LiveDot`, `Chip`, `MetricRow`.
+    45→    45→- `KpiCard.tsx`, `Sparkline.tsx` (SVG), `TraceXLogo.tsx` (`TraceXMark`),
+    46→    46→  `ScreenHeader.tsx` (kicker/title/description/right),
+    47→    47→  `ChartBits.tsx` (`CHART` palette const, `useChartTheme()`, `ChartTooltip`,
+    48→    48→  `GRID`, `AXIS`), `Skeletons.tsx` (`useRefresh(dep)` → 280ms skeleton flash
+    49→    49→  on filter change; `useNow()`; `KpiRowSkeleton`, `PanelSkeleton`,
+    50→    50→  `ChartSkeleton`, `TableSkeleton`, `ScreenSkeleton`).
+    51→    51→- Shell: `shell/Sidebar.tsx`, `shell/TopBar.tsx` (platform segmented, range
+    52→    52→  24h/7d/30d/custom, search, language chips, theme toggle, IST clock),
+    53→    53→  `shell/StatusBar.tsx` (footer, mt-auto), `shell/BootSplash.tsx`.
+    54→    54→- `screens/OverviewScreen.tsx` — COMPLETE (KPI row, stacked
+    55→    55→  sentiment-composition area chart + baseline + spike markers, live alert
+    56→    56→  feed w/ auto-prepend, trending narratives table, network preview,
+    57→    57→  module pipeline strip).
+    58→    58→- `TraceXApp.tsx` — shell + screen router (framer-motion transitions).
+    59→    59→  Mobile: horizontal module switcher under TopBar (md:hidden).
+    60→    60→
+    61→    61→### Conventions (MANDATORY for all screens)
+    62→    62→1. `"use client"` at top. Export `export function <Name>Screen()`.
+    63→    63→2. `const { filters, go } = useApp();` + `const ready = useRefresh("<id>");`
+    64→    64→   — render `ScreenSkeleton`-style composition while `!ready`.
+    65→    65→3. Wrap content in `<div className="space-y-4 animate-in fade-in duration-300">`
+    66→    66→   with `ScreenHeader kicker="MODULE 0X // NAME" title=… description=…`.
+    67→    67→4. Use `Panel`, `Badge`, `ScoreBar`, `Delta`, `Legend`, `Sparkline`,
+    68→    68→   `KpiCard` — do NOT restyle from scratch. Charts: recharts +
+    69→    69→   `CHART` colors + `useChartTheme()` for grid/ticks + `ChartTooltip`.
+    70→    70→5. Numbers: `fmtCompact`/`fmtNet` etc. from `@/lib/fmt`; mono + `tnum`.
+    71→    71→6. All data via `@/lib/mock` getters with `useMemo(() => get…(filters), [filters])`.
+    72→    72→7. shadcn/ui from `@/components/ui/*` for buttons/tabs/dialog/sheet/table/etc.
+    73→    73→8. Recharts XAxis for time series: `dataKey="t" type="number"
+    74→    74→   domain={["dataMin","dataMax"]}` + tickFormatter via point.label
+    75→    75→   (see OverviewScreen for copy-paste pattern).
+    76→    76→9. NO blue/indigo accents. NO rounded-full pills (4–6px radius only).
+    77→    77→   NO gradients on UI chrome (chart area fills at low alpha are OK).
+    78→    78→10. Layout: `grid grid-cols-1 xl:grid-cols-12 gap-4` rows of Panels.
+    79→    79→
+    80→    80→## Task queue
+    81→    81→- 2: foundation (DONE)
+    82→    82→- 3-a: TrendsScreen + SentimentScreen (agent, in progress)
+    83→    83→- 3-b: DemographicsScreen + BotScreen (agent, in progress)
+    84→    84→- 3-c: NetworkScreen + ForceGraph (agent, in progress)
+    85→    85→- 3-d: MisinfoScreen + AlertsScreen (+ ReportModal, rule builder) (agent, in progress)
+    86→    86→- 4: wiring, lint, agent-browser verification, fixes (main)
+    87→    87→- 5: final QA + cron job (main)
+    88→    88→
+    89→    89→---
+    90→    90→Task ID: 2
+    91→    91→Agent: main
+    92→    92→Task: TraceX foundation — theme, mock data layer, app state, shared components, shell, Overview screen
+    93→    93→
+    94→    94→Work Log:
+    95→    95→- Installed d3-force + @types/d3-force.
+    96→    96→- Wrote globals.css Signal Intelligence theme (dark default, light secondary).
+    97→    97→- layout.tsx: Newsreader/IBM Plex Sans/JetBrains Mono, next-themes dark default, sonner toaster.
+    98→    98→- Built deterministic mock layer (rng, content, series, network, index) — 16 topics, claims with spread timelines, alerts pool, 90-node network w/ communities & propagation, bot clusters/scatter.
+    99→    99→- app-state.tsx context (filters + nav + refreshKey).
+   100→   100→- Shared components: primitives, KpiCard, Sparkline, TraceXLogo, ChartBits, Skeletons, ScreenHeader.
+   101→   101→- Shell: Sidebar, TopBar (filters), StatusBar, BootSplash; TraceXApp router w/ framer-motion.
+   102→   102→- OverviewScreen: KPIs, sentiment-composition area chart, live alert feed, trending table, network preview, module pipeline strip.
+   103→   103→- Stubs for screens 02–08 (agents will overwrite).
+   104→   104→- Lint clean; GET / 200.
+   105→   105→
+   106→   106→Stage Summary:
+   107→   107→- Foundation + Overview complete and verified compiling.
+   108→   108→- Agents: overwrite stub files ONLY for your assigned screens; follow Conventions above; do not touch shared files except additive changes if strictly necessary (report them in your worklog entry).
+   109→   109→
+   110→   110→---
+   111→   111→Task ID: 3-a
+   112→   112→Agent: frontend agent (Trends + Sentiment)
+   113→   113→Task: Implemented Screen 02 Trend Explorer + Screen 03 Sentiment & Emotion
+   114→   114→
+   115→   115→Work Log:
+   116→   116→- Read worklog, OverviewScreen reference, primitives/ChartBits/Skeletons/KpiCard/ScreenHeader/Sparkline, app-state, mock layer (index/series/content/types), fmt helpers.
+   117→   117→- TrendsScreen.tsx (full rewrite): topic chip selector (10 chips + "+N more" Select, sorted by change24h, active = selectedTopicId ?? top-changer); ComposedChart "Narrative velocity" (orange gradient area total + dashed cyan baseline Line + amber ReferenceDot spike markers + ChartTooltip w/ spike badge) with stats strip (peak / avg-vs-baseline / spikes flagged); Emerging narratives panel (Flame, Delta, gloss, risk ScoreBar, Sparkline, "spike −Nd" note, click → drill-down); Tracked keywords table (search Input, velocity icons Flame/TrendingUp/Minus/TrendingDown, category Badge, filter-aware volume, Delta, X/TG mini stacked bar, risk ScoreBar, row click → drill-down); right-side drill-down Sheet (420px, MetricRow telemetry incl. LANGUAGES native labels, sample posts w/ platform + bot-flagged badges + engagement + bot-P ScoreBar, platform-split PieChart donut w/ centered fmtCompact total, velocity mini AreaChart, related-narrative chips that hot-swap the sheet); empty state (SearchX + reset filter bank). Sheet opens via local sheetOpen state (useState initializer + selectTopic handler) — no setState-in-effect (lint rule react-hooks/set-state-in-effect).
+   118→   118→- SentimentScreen.tsx (full rewrite): 4 KpiCards (net sentiment w/ sentimentTone, dominant emotion from getEmotions max, negative share computed from getVolumeSeries halves w/ pp delta, shift count); stacked AreaChart "Sentiment composition over time" (green/slate/red gradients, stackId s, amber dashed ReferenceLine at getSentimentShifts times, shift badge in tooltip); RadarChart emotion mix (violet, PolarGrid/PolarAngleAxis themed) + per-emotion Delta rows; shift alert callouts (from→to fmtNet colored, ArrowUp/DownRight, windowLabel mono, note, pp Delta); topic comparison panel (side-by-side net cards + table with shadcn Checkbox selection, max-5 with sonner toast, mini pos/neu/neg stacked bars, fmtNet Badges, shift Delta suffix ""); default selection = first 3 by volume, survives filter changes via validity filtering.
+   119→   119→- useRefresh("trends"/"sentiment") skeleton gating (PanelSkeleton / KpiRowSkeleton compositions) on every filter change.
+   120→   120→- `bun run lint` → 1 error (react-hooks/set-state-in-effect on the sheet-open effect) → refactored to event-handler + lazy-initializer state; re-lint clean.
+   121→   121→- agent-browser session t3a: verified Trends (all 4 sections, 16 chips + "+6 more" select, chart axes/stats, 5 emerging rows, 16-row table), drill-down sheet open/related-topic swap/close, keyword search ("farmer" → 1/16), 30D range switch (spikes flagged = 3, day labels); verified Sentiment (4 KPIs, composition chart, radar + emotion rows, 2 shift alerts, comparison strip/table), checkbox deselect (3→2 cards), 5-topic cap toast. No console errors from my code. Screenshots: /tmp/t3a-trends.png, /tmp/t3a-sentiment.png.
+   122→   122→- Environment incident (not my code): shared dev server on :3000 died mid-verification (concurrent agents' compile load / resource exhaustion — EADDRINUSE fights, fork/thread failures, one Turbopack ChunkLoadError full-reload). Server was restarted (by another agent/orchestrator); re-verified both screens after recovery with zero console errors.
+   123→   123→
+   124→   124→Stage Summary:
+   125→   125→- Files written: src/components/tracex/screens/TrendsScreen.tsx, src/components/tracex/screens/SentimentScreen.tsx (stubs fully replaced; no other files touched).
+   126→   126→- Verification: eslint clean (0 errors/warnings); browser checks on both screens incl. drill-down sheet, search, range/filter re-query, compare-limit toast — no console errors attributable to these screens.
+   127→   127→- Known shared friction (NOT introduced by me, out of my file scope): `bunx tsc --noEmit` flags the recharts `content={(props) => <ChartTooltip {...props} …/>}` spread in OverviewScreen (reference), MisinfoScreen, AlertsScreen AND my two screens — ChartBits' `TooltipEntry` doesn't accept recharts `Payload<ValueType, NameType>[]` (name can be number). A one-line widen of `name?: string | number` in ChartBits.tsx TooltipEntry would clear this project-wide, but that file is shared and off-limits for 3-a. Dev server serves fine (SWC); lint gate passes.
+   128→   128→- API gaps noticed: (1) no true per-topic 24h volume getter — sheet computes it via getTopicSeries with range overridden to "24h"; (2) spike flags only exist for day-bucketed ranges (30d/custom) or 24h hourly — 7d (3h buckets) shows 0 spikes by design of series.ts; (3) getEmotions ignores search query (rng over platform/range/languages only) so the dominant-emotion KPI doesn't respond to search; (4) Sheet/AlertType 'sentiment-shift' events carry no topicId, so shift callouts stay "aggregate feed".
+   129→   129→
+   130→   130→---
+   131→   131→Task ID: 3-a (verification & fix pass)
+   132→   132→Agent: frontend agent (Trends + Sentiment)
+   133→   133→Task: Re-verified Screens 02/03 end-to-end; fixed Radix Select controlled/uncontrolled warning in TrendsScreen
+   134→   134→
+   135→   135→Work Log:
+   136→   136→- Re-read worklog + all reference files (OverviewScreen, primitives, ChartBits, Skeletons, KpiCard, ScreenHeader, Sparkline, app-state, mock index/series/types, fmt); confirmed both screen implementations are complete and API-consistent (effectiveTopics `{topic,weight}` shape, SamplePost/SentimentShiftEvent/TopicSentimentRow fields, fmtScore, resetFilters all used correctly).
+   137→   137→- `bun run lint` → clean (0 errors/warnings).
+   138→   138→- agent-browser session t3a on :3000: Trends — verified topic chips (10 + "+6 more" Select), velocity chart + stats strip, 5 emerging rows with `spike −Nd` notes, 16-row keyword table, drill-down sheet (telemetry incl. native language labels, platform-split donut, velocity mini chart, sample posts w/ BOT-FLAGGED badge + bot-P bars, related-narrative chips). Related-chip hot-swap verified (किसान आंदोलन → monsoon session parliament), sheet close restores default topic. Keyword search "farmer" → 1/16 rows. 30D range re-query → spikes flagged 3.
+   139→   139→- Sentiment — verified 4 KPIs, composition chart w/ shift ReferenceLines, emotion radar + delta rows, 2 shift alert callouts (from→to fmtNet), comparison strip; checkbox deselect 3→2, re-select to 5, 6th topic blocked with "Comparison limit reached" toast.
+   140→   140→- Found + fixed 1 console warning in MY file: the "+N more" Select in TrendsScreen flipped between controlled/uncontrolled when activeId crossed the top-10/more boundary (value undefined ↔ topic id). Fix: always-controlled value with `"__none__"` sentinel + manually rendered trigger text (replaces SelectValue placeholder); removed unused SelectValue import. Re-verified in browser — warning gone, dropdown selection still opens the sheet, closing restores "+6 more" with no warnings.
+   141→   141→- Final state: lint clean; `bunx tsc --noEmit` shows only the pre-existing shared ChartBits `TooltipEntry.name: string` incompatibility (affects reference OverviewScreen identically — off-limits shared file, documented above); browser console clean on both screens. Screenshots: /tmp/t3a-trends.png, /tmp/t3a-sentiment.png. Session closed.
+   142→   142→
+   143→   143→Stage Summary:
+   144→   144→- Files changed: src/components/tracex/screens/TrendsScreen.tsx (Select controlled-value fix, ~20 lines). No other files touched.
+   145→   145→- Verification: eslint 0/0; agent-browser both screens incl. drill-down sheet, search, range re-query, compare cap toast — zero console errors/warnings after fix.
+   146→   146→- API gaps: unchanged from entry above (no per-topic 24h getter; spikes only for day-bucketed ranges; getEmotions ignores query; shift events lack topicId).
+   147→   147→
+   148→   148→---
+   149→   149→Task ID: 4
+   150→   150→Agent: main (orchestrator)
+   151→   151→Task: Wire-up verification, QA fixes, full end-to-end agent-browser validation
+   152→   152→
+   153→   153→Work Log:
+   154→   154→- All 8 screens were implemented by the agent batch (3-a/3-b/3-c/3-d) despite tool-call timeouts; verified file completeness (6,200+ lines across 9 screen files + ForceGraph + ReportModal).
+   155→   155→- Fixed shared typing: ChartBits TooltipEntry widened (name/value union types) clearing recharts tooltip content friction project-wide.
+   156→   156→- Fixed series.ts getKpis sum helper typing (keyof VolumePoint) — tsc --noEmit now zero errors in app code (only pre-existing scaffold examples/skills noise remains).
+   157→   157→- Full agent-browser QA pass: boot splash → Overview; navigated all 8 modules — zero console errors anywhere.
+   158→   158→- Golden paths verified: platform toggle changes table data (ALL 5.5M → X 4.4M → TG 1.0M for #GaganyaanLaunch); trend drill-down Sheet (telemetry, platform donut, Hindi sample posts with BOT-FLAGGED badges, related-narrative hot-swap); network node click → Account inspector; propagation trace (किसान आंदोलन) → 8 animated .edge-flow edges + cascade stats (reach/latency/depth); misinfo claim dossier (fact-check cross-refs, bot correlation bars, cross-platform propagation chart + event timeline with BOTS % badges); report modal (auto key findings, Export PDF/Copy actions); alert Acknowledge updates row status; community filter chips; zoom/pan/drag controls present.
+   159→   159→- VLM design review: Overview 9/10, Network propagation 9/10, Misinfo dossier 9/10, light mode + bots screen "professional and complete".
+   160→   160→- Footer verified: sticks at 0px gap on tall viewports (1600×2600), pushes naturally on overflow.
+   161→   161→- Theme toggle verified (light mode renders cleanly). Tablet 1024px layout verified.
+   162→   162→- Lint clean; dev.log all 200s, no runtime errors.
+   163→   163→
+   164→   164→Stage Summary:
+   165→   165→- TraceX prototype COMPLETE: all 8 screens interactive with filter-aware mock data, drill-downs, modals, force-graph, propagation tracing.
+   166→   166→- Remaining nice-to-haves (deferred): per-topic 24h volume getter, spike flags for 7d 3h buckets, getEmotions query sensitivity, shift-event topicId tagging.
+   167→   167→
+   168→   168→---
+   169→   169→Task ID: 5
+   170→   170→Agent: main (orchestrator)
+   171→   171→Task: Final handover documentation + recurring QA cron
+   172→   172→
+   173→   173→Work Log:
+   174→   174→- Documented full architecture, conventions, verification evidence, and next-phase recommendations.
+   175→   175→- Created recurring 15-min webDevReview cron job for autonomous QA/iteration.
+   176→   176→
+   177→   177→Stage Summary:
+   178→   178→- Project ready for hackathon demo. See "Current project status" section above.
+   179→   179→
+   180→   180→---
+   181→   181→Task ID: 6 (webDevReview round 1)
+   182→   182→Agent: main (orchestrator, cron-triggered)
+   183→   183→Task: QA sweep + new features (⌘K palette, watchlist, hotkeys) + API gap fixes + styling polish
+   184→   184→
+   185→   185→Work Log:
+   186→   186→- QA sweep across all 8 screens via agent-browser: zero console errors; golden paths re-verified.
+   187→   187→- NEW FEATURE: CommandPalette (src/components/tracex/shell/CommandPalette.tsx) — ⌘K/Ctrl+K opens cmdk dialog: 8 modules, 16 narratives (with volume + watchlist stars), 8 claims (risk-coloured), 6 influencers (PR scores), filter-bank actions (platform X/TG/All, language toggles, reset, report, theme). Footer kbd-hint strip. Trigger button in TopBar; romanized topic ids added to search values for Devanagari matching.
+   188→   188→- NEW FEATURE: Narrative watchlist — app-state gained watchlist[] + toggleWatchlist/isWatched (defaults: kisan-andolan, isro-mission). Sidebar WATCHLIST section (risk dot, label, live sparkline, volume, click → trends drill-down). Star toggle column in Trends keyword table + star button in drill-down sheet header (stopPropagation; bidirectional sync verified).
+   189→   189→- NEW FEATURE: Keyboard shortcuts — 1–8 switch modules (input-guarded); hotkey hint row in sidebar.
+   190→   190→- API FIXES (src/lib/mock/series.ts): (1) spike injection now covers 7d 3h-buckets (bucketed spikeHour mapping + tuned thresholds 1.55/2.1) — Trends 7D now shows "3 vs baseline"; (2) getEmotions responds to search query (matched narratives' risk/negative lean tilts Opposition/Anger/Anxiety) + platform tilt; (3) getSentimentShifts attributes each flip to the topic with the largest velocity-weighted swing (topic labels verified in browser).
+   191→   191→- STYLING POLISH: Overview zero-spike state now muted "none · nominal" (was amber); alert feed rows carry full-detail title tooltips; XAxis minTickGap adaptive (30d=24, 7d=36); KpiCard hover adds tonal lift (bg-accent/50 + stronger border); OverviewScreen gained cn import; ChartBits TooltipEntry widened earlier (name/value unions) — tsc clean app-wide.
+   192→   192→- Verification: lint 0/0; tsc --noEmit 0 app errors; browser: palette open/filter/Enter → Trends + sheet opens; star toggle on/off synced with sidebar count; hotkeys 1–8 navigate; 7d spikes = 3; shift panel topic-attributed; VLM confirms watchlist + ⌘K render with no defects.
+   193→   193→
+   194→   194→Stage Summary:
+   195→   195→- All features working, console clean after fresh reload (earlier errors were stale HMR buffers).
+   196→   196→- Nice-to-haves for next round: persist watchlist to localStorage; palette action to jump directly to claim dossier selection; romanized alias search for Hindi claim text; sparkline in ModuleStrip clickable to respective screens.
+   197→   197→
+   198→   198→---
+   199→   199→Task ID: 7 (webDevReview round 2)
+   200→   200→Agent: main (orchestrator, cron-triggered)
+   201→   201→Task: Full QA sweep + feature round: session persistence, deep-linking, alert bell, hotkey help, CSV export, corpus heat calendar, clickable pipeline strip, styling polish
+   202→   202→
+   203→   203→Work Log:
+   204→   204→- Read worklog; assessed project state: dev server healthy (all 200s), lint 0/0, tsc 0 app errors.
+   205→   205→- agent-browser QA sweep BEFORE changes: all 8 screens render (hotkey nav), palette open/filter/romanized-search ("kisan" → किसान आंदोलन), watchlist sidebar sync, report modal open/close, platform filter data change (ALL 52M / X 38M / TG 14M / restore 52M), theme toggle both directions, trends drill-down sheet, network node click → account inspector. ZERO console errors → project judged stable → feature round prioritized.
+   206→   206→- NEW: Session persistence + URL hash deep-linking (src/lib/app-state.tsx rewrite):
+   207→   207→  - localStorage key `tracex.console.v1` stores {filters, watchlist}; validated + merged with defaults on load (corrupt-store safe, SSR-guarded via module-level `typeof window` check — no hydration mismatch since BootSplash gates first paint).
+   208→   208→  - `#/screen`, `#/trends/topic-id`, `#/misinfo/claim:CLM-XXXX` hash format; write-only effect (replaceState — no history spam, no setState in effect so lint-clean); hash overrides stored position on load.
+   209→   209→  - `selectedClaimId` added to global bus; `go()` accepts `{topicId?, claimId?}`.
+   210→   210→- NEW: Palette claim entries now jump straight to the dossier (go("misinfo", {claimId})) — MisinfoScreen selection moved from local useState to app-state (alias vars keep the rest of the file untouched).
+   211→   211→- NEW: CSV export (src/lib/csv.ts — downloadCsv + csvStamp, RFC-style escaping, Blob + objectURL):
+   212→   212→  - Trends keyword table toolbar "CSV" button (8 columns incl. velocity/risk/x-share/watched).
+   213→   213→  - Alerts history panel "CSV" button (severity/type/topic/timestamp/status/detail).
+   214→   214→  - Both fire sonner toasts with row counts.
+   215→   215→- NEW: AlertsBell (src/components/tracex/shell/AlertsBell.tsx) — TopBar bell with red unread badge (New + critical/high count), popover feed (10 most recent, severity dots, type badges, relTime), row click → implicated module via linkScreen, "Mark all read" + "Triage console →" footer. Opening the popover marks visible alerts read.
+   216→   216→- NEW: HotkeyHelp (src/components/tracex/shell/HotkeyHelp.tsx) — "?" (or Shift+/) opens a shortcuts dialog: Console / Module switching (1–8) / Analyst gestures groups, built on new Kbd primitives.
+   217→   217→- NEW: Kbd primitives (src/components/tracex/common/Kbd.tsx) — KbdKey key-caps (border-b-2 inset shadow, mono), Kbd rows, HintStrip for StatusBar (⌘K palette · 1–8 modules · ? shortcuts).
+   218→   218→- NEW: HeatCalendar (src/components/tracex/common/HeatCalendar.tsx) — 30-day corpus intensity strip on Overview ("Corpus intensity" panel between KPI row and main chart): cyan color-mix opacity scale by daily volume vs window max, red ring + corner dot on spike days, hover readout (date · posts · SPIKE), avg/anomaly footer, click a day → setRange("30d") + go("trends") + toast. Always queries 30d context regardless of active range, respects filter bank.
+   219→   219→- NEW: ModuleStrip pipeline cards are now buttons — each navigates to its module (Ingestion→overview, Demographics→demographics, Sentiment→sentiment, Trend Detection→trends, Bot Detection→bots, Network→network, Misinformation→misinfo, Fusion→overview); hover shows primary border + ArrowUpRight affordance, icon tints primary.
+   220→   220→- STYLING: globals.css — visible :focus-visible ring (ring color 75%), native number-input spinners removed, recharts active-dot cyan drop-shadow glow, panel hover border lift (section.bg-card), prefers-reduced-motion guards (kills pulse-dot/edge-flow/scanline + all animations). StatusBar version → v0.10.0, kbd HintStrip added.
+   221→   221→- VERIFICATION (all via agent-browser, fresh reloads):
+   222→   222→  - Reload with `#/misinfo/claim:CLM-2041` → misinfo + UPI dossier restored. localStorage snapshot verified (filters range=30d carried over, watchlist 2 defaults).
+   223→   223→  - Watchlist star toggle → localStorage update; reload → #KollywoodRelease still in sidebar (then unstarred to restore defaults).
+   224→   224→  - Palette "convenience fee" → Enter → misinfo dossier CLM-2041 + hash `#/misinfo/claim:CLM-2041`.
+   225→   225→  - Bell: popover 12 rows, badge "3", row click navigates + closes.
+   226→   226→  - Heat calendar: 30 cells dark AND light; day click (06 Sept, 12,86,987 posts en-IN formatted) → trends + 30D range active.
+   227→   227→  - ModuleStrip: Bot Detection card → bots screen. "?" → help dialog (38 lines) → Esc closes.
+   228→   228→  - CSV buttons on both screens → "exported" toasts.
+   229→   229→  - Full 8-screen regression sweep: all OK, zero console errors. Light mode verified with all new features.
+   230→   230→  - Final: lint 0/0, tsc --noEmit 0 app errors, dev.log all 200s.
+   231→   231→
+   232→   232→Stage Summary:
+   233→   233→- TraceX v0.10.0: 8 new features + polish layer on a stable base. Console state now survives refresh and is deep-link shareable (`#/misinfo/claim:CLM-2041`) — strong hackathon demo properties.
+   234→   234→- Files added: src/lib/csv.ts, src/components/tracex/shell/AlertsBell.tsx, src/components/tracex/shell/HotkeyHelp.tsx, src/components/tracex/common/Kbd.tsx, src/components/tracex/common/HeatCalendar.tsx.
+   235→   235→- Files changed: src/lib/app-state.tsx (persistence/hash/claimId), MisinfoScreen (app-state selection), CommandPalette (claim jump), TrendsScreen + AlertsScreen (CSV buttons), OverviewScreen (heat panel + clickable strip), TopBar (bell), StatusBar (hints + version), TraceXApp (HotkeyHelp mount), globals.css (focus/motion/panel polish).
+   236→   236→- Remaining ideas for next round: browser back/forward hashchange sync (currently replaceState only); heat calendar keyboard arrow navigation; CSV export on more tables (bots, influencers); claim auto-scroll highlight when opened via palette; per-topic heat calendar in drill-down sheet; sound/flash option on critical alerts (SOC vibe).
+   237→   237→
+   238→   238→---
+   239→   239→Task ID: 8 (webDevReview round 3)
+   240→   240→Agent: main (orchestrator, cron-triggered)
+   241→   241→Task: QA sweep + v0.11 feature round — history-aware navigation, global report modal, CSV exports, claim focus flash, per-topic heat strip, audio cue, dynamic title, styling polish
+   242→   242→
+   243→   243→Work Log:
+   244→   244→- Read worklog; assessed state: dev server healthy (200s), lint 0/0, tsc 0 app errors.
+   245→   245→- Pre-change QA sweep (agent-browser, session tracex-qa8): all 8 screens render via hotkeys with ZERO console errors/warnings; verified network node click → account inspector, trends drill-down sheet, palette search (romanized "kisan" → किसान आंदोलन), report modal from Alerts button, bell popover, platform filter data change (52M → 38M), deep-link persistence on reload.
+   246→   246→- BUG FOUND + FIXED — back/forward navigation: go() used replaceState only, so browser Back EXITED the app entirely and bfcache restore garbled the dev page (h1=null). Fix in app-state.tsx: first hash write normalises URL via replaceState; every later go() PUSHES a history entry; new popstate listener restores {screen, topicId, claimId} from the target hash (bare/foreign hash normalised to #/overview BEFORE setState so the write-effect never re-pushes). Verified: trends → network → Back (trends ✓) → Back (overview ✓) → Forward (trends ✓); page never garbles.
+   247→   247→- FEATURE — global ReportModal: added reportOpen/setReportOpen to app-state; modal now mounted ONCE at shell level (TraceXApp Console); AlertsScreen local state + mount removed (ReportsPanel button → global setReportOpen); ⌘K palette "Generate intelligence report" now opens the modal DIRECTLY over any screen (was: navigate-to-alerts + toast). Verified from trends screen: palette → modal opens, URL unchanged.
+   248→   248→- FEATURE — CSV exports extended: BotScreen "Export watchlist" is now a REAL download (tracex-flagged-accounts-*.csv, 11 columns incl. botProb/age/dupPct/timing/cluster, respects current sort+platform scope, 12-row toast); NetworkScreen influencer board gains "CSV" button (rank/handle/platform/community/pagerank/followers/reach/botProb, 8-row toast).
+   249→   249→- FEATURE — claim focus flash (MisinfoScreen): claim rows carry data-claim-id; effect on selectedClaimId does scrollIntoView(smooth, nearest) + .claim-flash outline-pulse animation (new CSS keyframes in globals.css, reduced-motion guarded, re-triggerable via reflow trick). Verified: palette jump → claim selected; list click on new claim → FLASHING ✓ in-viewport ✓.
+   250→   250→- FEATURE — per-topic 30-day intensity strip in trends drill-down sheet: TopicDrill computes getTopicSeries(topic, {...filters, range:"30d"}) → HeatDay[]; HeatCalendar gained additive `compact` prop (size-2.5 cells, no legend, truncated readout — fits 420px sheet); strip renders between Telemetry and Platform split with "N spikes" counter. Verified: 30 cells, "3 spikes", heat-in-sheet ✓.
+   251→   251→- FEATURE — critical-alert audio cue (SOC vibe): new src/lib/alert-cue.ts module singleton — WebAudio two-tone chirp (880→660Hz, ~160ms, gain 0.07), localStorage persistence (tracex.audio.v1), CustomEvent bus (tracex:alert-cue); TopBar volume toggle (Volume2/VolumeX, aria-pressed, primary-tinted armed state, "armed" toast + sample chirp on enable — the click gesture unlocks the AudioContext); OverviewScreen LiveAlertFeed dispatches on high/critical template arrivals; shell-level AlertCueListener in TraceXApp binds the event. Verified: toggle on → localStorage "on" + toast; dispatch no errors; restored to off.
+   252→   252→- FEATURE — dynamic document title: "Module · TraceX" (e.g. "Bot Detection · TraceX"), updates per screen via DocumentTitle effect in TraceXApp. Verified across screen switches.
+   253→   253→- STYLING POLISH (globals.css): .claim-flash keyframes (inset primary rail + expanding ring + 14% bg tint, 1.6s ease-out); tbody tr background transition (120ms); sheet/dialog overlay backdrop-filter blur(2px) saturate(0.9); claim-flash added to reduced-motion kill-list; StatusBar version → v0.11.0; HotkeyHelp gains "←/→ Browser Back / Forward — walk console history" entry; tracex-root wrapper class added to Console root div.
+   254→   254→- VERIFICATION (agent-browser, fresh session tracex-qa9-final): fresh reload + all 8 screens hotkey sweep — ZERO console errors; deep-link #/misinfo/claim:CLM-2041 restores screen + selection + 2-item watchlist from localStorage; light mode toggle clean; sheet heat strip screenshot; VLM design review — drill-down sheet 8.5/10 (heat strip "highly effective data-dense visualization"), light mode 9/10 (no defects).
+   255→   255→- Final gates: bun run lint 0/0; bunx tsc --noEmit 0 app errors (only pre-existing examples/skills scaffold noise); dev.log all 200s.
+   256→   256→
+   257→   257→Stage Summary:
+   258→   258→- TraceX v0.11.0: 7 features + 1 real bug fix (back/forward history) on the stable v0.10 base. Console now behaves like a real multi-screen app under browser navigation.
+   259→   259→- Files added: src/lib/alert-cue.ts.
+   260→   260→- Files changed: src/lib/app-state.tsx (pushState/popstate/reportOpen), TraceXApp.tsx (shell mounts: ReportModal, AlertCueListener, DocumentTitle, tracex-root), CommandPalette.tsx (direct modal open), AlertsScreen.tsx (global report state), TopBar.tsx (audio toggle), OverviewScreen.tsx (cue dispatch), MisinfoScreen.tsx (data-claim-id + flash effect), TrendsScreen.tsx (sheet heat strip), BotScreen.tsx + NetworkScreen.tsx (CSV exports), HeatCalendar.tsx (compact prop — additive), HotkeyHelp.tsx (history hint), StatusBar.tsx (version), globals.css (claim-flash + polish).
+   261→   261→- Remaining ideas for next round: heat calendar keyboard arrow navigation; CSV export on misinfo claims list + demographics tables; title unread-count suffix (needs lifted bell read-state); audio cue on screens other than Overview (feed timer currently Overview-scoped); per-bucket tooltip on compact heat cells; VLM minor notes (telemetry value right-alignment, Languages→heat strip spacing).
+   262→   262→

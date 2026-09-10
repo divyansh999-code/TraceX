@@ -43,6 +43,8 @@ const SHORTCUTS: { group: string; items: Hotkey[] }[] = [
       { keys: ["↵"], label: "Execute the highlighted palette entry" },
       { keys: ["↑", "↓"], label: "Move through palette results" },
       { keys: ["←", "→"], label: "Browser Back / Forward — walk console history" },
+      { keys: ["←", "→"], label: "Walk heat-calendar days once a cell is focused (Home/End jump to window edges)" },
+      { keys: ["Tab"], label: "Focus the heat calendar, then Enter to pivot trends to that day" },
     ],
   },
 ];

@@ -3,10 +3,13 @@
 /**
  * 30-day corpus intensity calendar — GitHub-style density strip in the
  * console telemetry language. Cell opacity = daily volume vs the window max;
- * spike days carry a red ring. Clicking a day pivots the console to the
- * 30-day trend window.
+ * spike days carry a red ring. Clicking a day (or focusing it and pressing
+ * Enter) pivots the console to the 30-day trend window.
+ *
+ * Keyboard: ←/→ walk days, Home/End jump to window edges, Enter/Space select.
+ * Roving tabindex — exactly one cell sits in the page tab order.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { fmtFull, fmtDateIST } from "@/lib/fmt";
 
@@ -28,6 +31,12 @@ export function HeatCalendar({
   compact?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  /* roving tabindex cursor — starts on the most recent day; the visible
+     cursor ring only appears once the strip is keyboard-touched, so an
+     untouched calendar doesn't look like it has a rendering artifact */
+  const [cursor, setCursor] = useState(days.length - 1);
+  const [touched, setTouched] = useState(false);
+  const cellRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const max = useMemo(() => Math.max(1, ...days.map((d) => d.total)), [days]);
   const avg = useMemo(() => (days.length ? days.reduce((a, d) => a + d.total, 0) / days.length : 0), [days]);
   const spikes = days.filter((d) => d.spike).length;
@@ -39,25 +48,47 @@ export function HeatCalendar({
 
   const hoverDay = hover != null ? days[hover] : null;
 
+  const onCellKey = (e: React.KeyboardEvent, i: number) => {
+    let next: number | null = null;
+    if (e.key === "ArrowRight" && i < days.length - 1) next = i + 1;
+    else if (e.key === "ArrowLeft" && i > 0) next = i - 1;
+    else if (e.key === "Home" && i !== 0) next = 0;
+    else if (e.key === "End" && i !== days.length - 1) next = days.length - 1;
+    if (next == null) return;
+    e.preventDefault();
+    setTouched(true);
+    setCursor(next);
+    setHover(next);
+    cellRefs.current[next]?.focus();
+  };
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       <div className="flex items-center gap-2">
         <div className={cn("flex min-w-0", compact ? "gap-[3px] flex-wrap" : "flex-wrap gap-[3px]")}>
           {days.map((d, i) => (
             <button
               key={d.t}
+              ref={(el) => {
+                cellRefs.current[i] = el;
+              }}
               type="button"
               onClick={() => onSelect?.(d)}
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
               onFocus={() => setHover(i)}
               onBlur={() => setHover(null)}
+              onKeyDown={(e) => onCellKey(e, i)}
+              tabIndex={i === cursor ? 0 : -1}
               aria-label={`${d.label} — ${fmtFull(d.total)} posts${d.spike ? ", anomalous spike" : ""}`}
               className={cn(
                 "relative rounded-[3px] cursor-pointer transition-transform",
                 compact ? "size-2.5" : "size-3.5",
                 "hover:scale-125 focus-visible:outline-1 focus-visible:outline-ring",
-                d.spike && "ring-1 ring-signal-red/80"
+                d.spike && "ring-1 ring-signal-red/80",
+                touched && i === cursor && (compact
+                  ? "outline-1 outline-signal-cyan/70"
+                  : "scale-110 outline-1 outline-offset-1 outline-signal-cyan/60")
               )}
               style={{ backgroundColor: intensity(d.total) }}
             >
@@ -108,7 +139,10 @@ export function HeatCalendar({
             avg {fmtFull(avg)}/day · {spikes} anomaly{spikes === 1 ? "" : "es"} flagged vs baseline
           </span>
         )}
-        <span className="ml-auto shrink-0">{days[days.length - 1]?.label ?? "today"}</span>
+        <span className={cn("ml-auto shrink-0", compact ? "hidden" : "hidden sm:inline")} aria-hidden="true">
+          ←/→ walk days
+        </span>
+        <span className="shrink-0">{days[days.length - 1]?.label ?? "today"}</span>
       </div>
     </div>
   );

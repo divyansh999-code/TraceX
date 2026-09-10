@@ -5,19 +5,16 @@
  * Mission control: KPIs, volume × sentiment band, live alert feed,
  * trending narratives, network preview, module pipeline strip.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useApp } from "@/lib/app-state";
-import { dispatchAlertCue } from "@/lib/alert-cue";
 import {
   getKpis,
   getVolumeSeries,
   effectiveTopics,
   getTopicSeries,
-  getAlerts,
   getNetwork,
   getInfluencers,
   NOW,
-  type IntelligenceAlert,
 } from "@/lib/mock";
 import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned, fmtFull } from "@/lib/fmt";
 import { cn } from "@/lib/utils";
@@ -26,7 +23,7 @@ import { KpiCard } from "../common/KpiCard";
 import { Sparkline } from "../common/Sparkline";
 import { ScreenHeader } from "../common/ScreenHeader";
 import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
-import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
+import { useRefresh, useNow, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
 import { HeatCalendar, type HeatDay } from "../common/HeatCalendar";
 import {
   ResponsiveContainer,
@@ -67,63 +64,14 @@ const WINDOW_LABEL: Record<string, string> = {
 
 /* ---------------- Live alert feed ---------------- */
 
+/** Consumes the shared live-alert bus (app-state): the shell-level feed
+ *  singleton generates arrivals, fires the audio cue on every screen and
+ *  publishes here — so this panel, the top-bar bell and the tab-title
+ *  unread count all render ONE stream (no per-screen timers). Fresh rows
+ *  animate in via their keyed `feed-arrival` class. */
 function LiveAlertFeed() {
-  const { go } = useApp();
-  const [alerts, setAlerts] = useState<IntelligenceAlert[]>(() => getAlerts().slice(0, 9));
-
-  useEffect(() => {
-    let n = 0;
-    const id = setInterval(() => {
-      setAlerts((prev) => {
-        const templates = [
-          {
-            type: "spike" as const,
-            severity: "medium" as const,
-            title: "Velocity anomaly detected",
-            detail: "Hourly z-score 3.2 on monitored keyword set; evaluating correlation.",
-            status: "New" as const,
-            linkScreen: "trends" as const,
-          },
-          {
-            type: "bot-cluster" as const,
-            severity: "high" as const,
-            title: "Amplification burst — TX-88 fringe",
-            detail: "19 sibling accounts posted within 6s; escalation queued.",
-            status: "New" as const,
-            linkScreen: "bots" as const,
-          },
-          {
-            type: "misinformation" as const,
-            severity: "medium" as const,
-            title: "Claim re-emergence flagged",
-            detail: "Disputed claim text re-matched at 0.92 similarity.",
-            status: "New" as const,
-            linkScreen: "misinfo" as const,
-          },
-          {
-            type: "sentiment-shift" as const,
-            severity: "low" as const,
-            title: "Sentiment drift observed",
-            detail: "Anxiety share rising 0.8%/h on civic keyword cluster.",
-            status: "New" as const,
-            linkScreen: "sentiment" as const,
-          },
-        ];
-        const t = templates[n % templates.length];
-        n += 1;
-        const fresh: IntelligenceAlert = {
-          ...t,
-          id: `ALR-L${9000 + n}`,
-          t: Date.now(),
-        };
-        /* SOC audio cue — chirp when a high/critical alert lands (armed via
-           the volume toggle in the top bar; no-op when muted) */
-        dispatchAlertCue(t.severity);
-        return [fresh, ...prev].slice(0, 9);
-      });
-    }, 22_000);
-    return () => clearInterval(id);
-  }, []);
+  const { go, alertsFeed } = useApp();
+  const now = useNow(15_000);
 
   return (
     <Panel
@@ -135,12 +83,13 @@ function LiveAlertFeed() {
       right={<LiveDot />}
     >
       <div className="max-h-[420px] overflow-y-auto divide-y divide-border/60">
-        {alerts.map((a) => (
+        {alertsFeed.map((a) => (
           <button
             key={a.id}
             type="button"
             onClick={() => a.linkScreen && go(a.linkScreen)}
-            className="w-full text-left px-4 py-2.5 hover:bg-accent transition-colors cursor-pointer group"
+            title={`${a.id} — ${a.title}: ${a.detail}`}
+            className="feed-arrival w-full text-left px-4 py-2.5 hover:bg-accent transition-colors cursor-pointer group"
           >
             <div className="flex items-center gap-2">
               <SeverityDot severity={a.severity} />
@@ -148,7 +97,7 @@ function LiveAlertFeed() {
                 {a.title}
               </span>
               <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground/70 shrink-0">
-                {relTime(a.t, NOW)}
+                {relTime(a.t, now ? now.getTime() : NOW)}
               </span>
             </div>
             <div className="mt-1 flex items-center gap-2 pl-4">

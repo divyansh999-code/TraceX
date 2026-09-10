@@ -221,15 +221,22 @@ function TopicDrill({
             label="Risk score"
             value={<span className={riskTextClass(riskTone(topic.risk))}>{fmtScore(topic.risk)}</span>}
           />
-          <MetricRow label="Languages" value={langs || "—"} />
+          {/* Languages list can be long — wrappable right-aligned row instead
+              of MetricRow (whose value is shrink-0 and would overflow the sheet). */}
+          <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-border/60 last:border-0">
+            <span className="text-xs text-muted-foreground shrink-0">Languages</span>
+            <span className="font-mono text-xs tnum text-foreground text-right min-w-0 break-words">
+              {langs || "—"}
+            </span>
+          </div>
         </div>
 
         {/* 30-day intensity strip */}
-        <div className="border border-border rounded-md p-3">
+        <div className="border border-border rounded-md p-3 pt-2.5">
           <div className="flex items-center justify-between">
             <Taxonomy>30-day intensity</Taxonomy>
             <span className="font-mono text-[9px] tnum text-muted-foreground/60">
-              {heatDays.filter((d) => d.spike).length} spikes
+              {heatDays.filter((d) => d.spike).length} spikes · ←/→ to walk
             </span>
           </div>
           <div className="mt-2">
@@ -304,6 +311,7 @@ function TopicDrill({
                     tickLine={false}
                   />
                   <YAxis hide domain={["dataMin", "dataMax"]} />
+                  <CartesianGrid horizontal vertical={false} stroke={chartTheme.grid} strokeDasharray="3 5" strokeOpacity={0.5} />
                   <Tooltip
                     cursor={{ stroke: chartTheme.crosshair, strokeDasharray: "4 4" }}
                     content={(props) => (
