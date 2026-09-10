@@ -1,0 +1,795 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * SCREEN 02 — TREND EXPLORER.
+     5→ * Narrative velocity vs baseline, spike flags, emerging narratives,
+     6→ * tracked keyword table and the per-topic drill-down sheet.
+     7→ */
+     8→import { useMemo, useState } from "react";
+     9→import { useApp } from "@/lib/app-state";
+    10→import {
+    11→  effectiveTopics,
+    12→  getTopicSeries,
+    13→  getTopicById,
+    14→  getSamplePosts,
+    15→  LANGUAGES,
+    16→  NOW,
+    17→  type Topic,
+    18→  type VolumePoint,
+    19→  type SamplePost,
+    20→} from "@/lib/mock";
+    21→import { fmtCompact, fmtSigned, fmtScore, relTime, riskTone } from "@/lib/fmt";
+    22→import { cn } from "@/lib/utils";
+    23→import type { LucideIcon } from "lucide-react";
+    24→import { Panel, Badge, Delta, ScoreBar, Legend, Chip, MetricRow, Taxonomy } from "../common/primitives";
+    25→import { Sparkline } from "../common/Sparkline";
+    26→import { ScreenHeader } from "../common/ScreenHeader";
+    27→import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
+    28→import { useRefresh, PanelSkeleton } from "../common/Skeletons";
+    29→import {
+    30→  ResponsiveContainer,
+    31→  ComposedChart,
+    32→  AreaChart,
+    33→  Area,
+    34→  Line,
+    35→  XAxis,
+    36→  YAxis,
+    37→  CartesianGrid,
+    38→  Tooltip,
+    39→  ReferenceDot,
+    40→  PieChart,
+    41→  Pie,
+    42→  Cell,
+    43→} from "recharts";
+    44→import {
+    45→  Flame,
+    46→  TrendingUp,
+    47→  TrendingDown,
+    48→  Minus,
+    49→  Search,
+    50→  SearchX,
+    51→  Hash,
+    52→  Activity,
+    53→  Sparkles,
+    54→  ArrowUpRight,
+    55→  Users,
+    56→} from "lucide-react";
+    57→import { Button } from "@/components/ui/button";
+    58→import { Input } from "@/components/ui/input";
+    59→import {
+    60→  Sheet,
+    61→  SheetContent,
+    62→  SheetHeader,
+    63→  SheetTitle,
+    64→  SheetDescription,
+    65→} from "@/components/ui/sheet";
+    66→import {
+    67→  Select,
+    68→  SelectContent,
+    69→  SelectItem,
+    70→  SelectTrigger,
+    71→  SelectValue,
+    72→} from "@/components/ui/select";
+    73→
+    74→const WINDOW_LABEL: Record<string, string> = {
+    75→  "24h": "last 24 hours",
+    76→  "7d": "last 7 days",
+    77→  "30d": "last 30 days",
+    78→  custom: "custom window",
+    79→};
+    80→
+    81→const VELOCITY_META: Record<Topic["velocity"], { icon: LucideIcon; className: string }> = {
+    82→  surging: { icon: Flame, className: "text-signal-orange" },
+    83→  rising: { icon: TrendingUp, className: "text-signal-green" },
+    84→  steady: { icon: Minus, className: "text-muted-foreground" },
+    85→  declining: { icon: TrendingDown, className: "text-signal-red" },
+    86→};
+    87→
+    88→const riskTextClass = (t: "green" | "amber" | "red") =>
+    89→  t === "red" ? "text-signal-red" : t === "amber" ? "text-signal-amber" : "text-signal-green";
+    90→
+    91→/* ---------------- Sample post card (drill-down) ---------------- */
+    92→
+    93→function PostCard({ post }: { post: SamplePost }) {
+    94→  return (
+    95→    <div className="border border-border rounded-md p-2.5 bg-muted/20">
+    96→      <div className="flex items-center gap-2 min-w-0">
+    97→        <span className="font-mono text-[11px] text-foreground truncate">{post.handle}</span>
+    98→        <Badge tone={post.platform === "x" ? "orange" : "cyan"} className="shrink-0">
+    99→          {post.platform === "x" ? "X" : "TG"}
+   100→        </Badge>
+   101→        {post.botProb > 0.5 && (
+   102→          <Badge tone="red" className="shrink-0">
+   103→            bot-flagged
+   104→          </Badge>
+   105→        )}
+   106→        <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground/70 shrink-0">
+   107→          {relTime(NOW - post.minutesAgo * 60_000)}
+   108→        </span>
+   109→      </div>
+   110→      <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/90">{post.text}</p>
+   111→      <div className="mt-2 flex items-center gap-3 min-w-0">
+   112→        <span className="font-mono text-[10px] tnum text-muted-foreground whitespace-nowrap truncate">
+   113→          ↻ {fmtCompact(post.engagement.reposts)} · {fmtCompact(post.engagement.replies)} replies ·{" "}
+   114→          {fmtCompact(post.engagement.likes)} likes
+   115→        </span>
+   116→        <span className="ml-auto flex items-center gap-1.5 min-w-0 w-20 shrink-0">
+   117→          <span className="font-mono text-[9px] text-muted-foreground shrink-0">bot P</span>
+   118→          <ScoreBar value={post.botProb} height="h-1" className="flex-1" />
+   119→        </span>
+   120→      </div>
+   121→    </div>
+   122→  );
+   123→}
+   124→
+   125→/* ---------------- Drill-down sheet body ---------------- */
+   126→
+   127→function TopicDrill({
+   128→  topic,
+   129→  series,
+   130→  volume24h,
+   131→  onSelectTopic,
+   132→}: {
+   133→  topic: Topic;
+   134→  series: VolumePoint[];
+   135→  volume24h: number;
+   136→  onSelectTopic: (id: string) => void;
+   137→}) {
+   138→  const chartTheme = useChartTheme();
+   139→  const posts = getSamplePosts(topic.id);
+   140→  const related = topic.relatedTopics
+   141→    .map((id) => getTopicById(id))
+   142→    .filter((t): t is Topic => t !== null);
+   143→
+   144→  const xVol = series.reduce((a, p) => a + p.x, 0);
+   145→  const tgVol = series.reduce((a, p) => a + p.telegram, 0);
+   146→  const totalVol = xVol + tgVol;
+   147→  const platformData = [
+   148→    { name: "X", value: xVol },
+   149→    { name: "Telegram", value: tgVol },
+   150→  ];
+   151→  const velocity = series.slice(-14).map((p) => ({ t: p.t, label: p.label, v: p.total }));
+   152→
+   153→  const s = topic.sentiment;
+   154→  const dom =
+   155→    s.positive >= s.neutral && s.positive >= s.negative
+   156→      ? "positive"
+   157→      : s.negative >= s.neutral
+   158→        ? "negative"
+   159→        : "neutral";
+   160→  const domTone: "green" | "red" | "slate" = dom === "positive" ? "green" : dom === "negative" ? "red" : "slate";
+   161→  const langs = topic.languages
+   162→    .map((code) => LANGUAGES.find((l) => l.code === code)?.native ?? code)
+   163→    .join(" · ");
+   164→
+   165→  return (
+   166→    <>
+   167→      <SheetHeader className="border-b border-border pb-3">
+   168→        <div className="flex items-center gap-2 flex-wrap pr-8">
+   169→          <SheetTitle className="font-display text-lg font-semibold tracking-tight text-foreground">
+   170→            {topic.label}
+   171→          </SheetTitle>
+   172→          <Badge tone="slate">{topic.category}</Badge>
+   173→          {topic.emerging && <Badge tone="orange">emerging</Badge>}
+   174→        </div>
+   175→        <SheetDescription className="text-xs leading-relaxed">{topic.gloss}</SheetDescription>
+   176→      </SheetHeader>
+   177→
+   178→      <div className="p-4 space-y-4">
+   179→        {/* telemetry */}
+   180→        <div>
+   181→          <Taxonomy className="block mb-1">Telemetry</Taxonomy>
+   182→          <MetricRow label="Volume · 24h" value={fmtCompact(volume24h)} />
+   183→          <MetricRow label="24h change" value={<Delta value={topic.change24h} />} />
+   184→          <MetricRow
+   185→            label="Dominant sentiment"
+   186→            value={
+   187→              <Badge tone={domTone} dot>
+   188→                {dom}
+   189→              </Badge>
+   190→            }
+   191→          />
+   192→          <MetricRow
+   193→            label="Risk score"
+   194→            value={<span className={riskTextClass(riskTone(topic.risk))}>{fmtScore(topic.risk)}</span>}
+   195→          />
+   196→          <MetricRow label="Languages" value={langs || "—"} />
+   197→        </div>
+   198→
+   199→        {/* platform split donut + velocity mini chart */}
+   200→        <div className="grid grid-cols-2 gap-3">
+   201→          <div className="border border-border rounded-md p-3 min-w-0">
+   202→            <Taxonomy>Platform split</Taxonomy>
+   203→            <div className="relative h-32 mt-1">
+   204→              <ResponsiveContainer width="100%" height="100%">
+   205→                <PieChart>
+   206→                  <Tooltip
+   207→                    content={(props) => (
+   208→                      <ChartTooltip
+   209→                        {...props}
+   210→                        format={(e) =>
+   211→                          typeof e.value === "number"
+   212→                            ? `${((e.value / Math.max(1, totalVol)) * 100).toFixed(0)}%`
+   213→                            : String(e.value)
+   214→                        }
+   215→                      />
+   216→                    )}
+   217→                  />
+   218→                  <Pie data={platformData} dataKey="value" nameKey="name" innerRadius={36} outerRadius={54} strokeWidth={0}>
+   219→                    <Cell fill={CHART.orange} />
+   220→                    <Cell fill={CHART.green} />
+   221→                  </Pie>
+   222→                </PieChart>
+   223→              </ResponsiveContainer>
+   224→              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+   225→                <span className="font-mono text-sm tnum text-foreground leading-none">
+   226→                  {fmtCompact(totalVol)}
+   227→                </span>
+   228→                <span className="taxonomy text-[9px] text-muted-foreground mt-1">posts</span>
+   229→              </div>
+   230→            </div>
+   231→            <div className="mt-1.5 flex justify-center">
+   232→              <Legend
+   233→                items={[
+   234→                  { label: `X ${Math.round((xVol / Math.max(1, totalVol)) * 100)}%`, color: CHART.orange },
+   235→                  { label: `TG ${Math.round((tgVol / Math.max(1, totalVol)) * 100)}%`, color: CHART.green },
+   236→                ]}
+   237→              />
+   238→            </div>
+   239→          </div>
+   240→
+   241→          <div className="border border-border rounded-md p-3 min-w-0">
+   242→            <Taxonomy>Velocity</Taxonomy>
+   243→            <div className="h-32 -mx-1 mt-1">
+   244→              <ResponsiveContainer width="100%" height="100%">
+   245→                <AreaChart data={velocity} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+   246→                  <defs>
+   247→                    <linearGradient id="tvSheetVel" x1="0" y1="0" x2="0" y2="1">
+   248→                      <stop offset="0%" stopColor={CHART.orange} stopOpacity={0.45} />
+   249→                      <stop offset="100%" stopColor={CHART.orange} stopOpacity={0.1} />
+   250→                    </linearGradient>
+   251→                  </defs>
+   252→                  <XAxis
+   253→                    dataKey="t"
+   254→                    type="number"
+   255→                    domain={["dataMin", "dataMax"]}
+   256→                    tickFormatter={(t: number) => {
+   257→                      const p = velocity.find((s) => s.t === t);
+   258→                      return p?.label ?? "";
+   259→                    }}
+   260→                    minTickGap={40}
+   261→                    tick={{ fontSize: 9, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   262→                    axisLine={{ stroke: chartTheme.grid }}
+   263→                    tickLine={false}
+   264→                  />
+   265→                  <YAxis hide domain={["dataMin", "dataMax"]} />
+   266→                  <Tooltip
+   267→                    cursor={{ stroke: chartTheme.crosshair, strokeDasharray: "4 4" }}
+   268→                    content={(props) => (
+   269→                      <ChartTooltip
+   270→                        {...props}
+   271→                        label={(() => {
+   272→                          const p = velocity.find(
+   273→                            (s) => s.t === (props as { payload?: { t?: number } }).payload?.t
+   274→                          );
+   275→                          return p?.label ?? "";
+   276→                        })()}
+   277→                      />
+   278→                    )}
+   279→                  />
+   280→                  <Area dataKey="v" name="Volume" stroke={CHART.orange} strokeWidth={1.5} fill="url(#tvSheetVel)" />
+   281→                </AreaChart>
+   282→              </ResponsiveContainer>
+   283→            </div>
+   284→          </div>
+   285→        </div>
+   286→
+   287→        {/* sample posts */}
+   288→        <div>
+   289→          <Taxonomy className="block mb-2">Sample posts</Taxonomy>
+   290→          <div className="space-y-2">
+   291→            {posts.map((p) => (
+   292→              <PostCard key={p.id} post={p} />
+   293→            ))}
+   294→          </div>
+   295→        </div>
+   296→
+   297→        {/* related narratives */}
+   298→        <div className="border-t border-border/60 pt-3">
+   299→          <Taxonomy className="block mb-2">Related narratives</Taxonomy>
+   300→          <div className="flex flex-wrap gap-1.5">
+   301→            {related.length > 0 ? (
+   302→              related.map((t) => (
+   303→                <Chip key={t.id} onClick={() => onSelectTopic(t.id)} title={t.gloss}>
+   304→                  {t.label}
+   305→                </Chip>
+   306→              ))
+   307→            ) : (
+   308→              <span className="text-[11px] text-muted-foreground">No linked narratives.</span>
+   309→            )}
+   310→          </div>
+   311→        </div>
+   312→      </div>
+   313→    </>
+   314→  );
+   315→}
+   316→
+   317→/* ---------------- Main screen ---------------- */
+   318→
+   319→export function TrendsScreen() {
+   320→  const { filters, go, selectedTopicId, setSelectedTopicId, resetFilters } = useApp();
+   321→  const ready = useRefresh("trends");
+   322→  const chartTheme = useChartTheme();
+   323→  const [kw, setKw] = useState("");
+   324→  /* local sheet state — opens on mount when arriving with a topic, then via selectTopic */
+   325→  const [sheetOpen, setSheetOpen] = useState(() => selectedTopicId != null);
+   326→  const selectTopic = (id: string) => {
+   327→    setSelectedTopicId(id);
+   328→    setSheetOpen(true);
+   329→  };
+   330→  const handleSheetOpenChange = (open: boolean) => {
+   331→    setSheetOpen(open);
+   332→    if (!open) setSelectedTopicId(null);
+   333→  };
+   334→
+   335→  /* filter-aware topic rows (sorted by 24h change) */
+   336→  const topicRows = useMemo(
+   337→    () =>
+   338→      effectiveTopics(filters)
+   339→        .map(({ topic }) => {
+   340→          const series = getTopicSeries(topic, filters);
+   341→          return { topic, series, volume: series.reduce((a, p) => a + p.total, 0) };
+   342→        })
+   343→        .sort((a, b) => b.topic.change24h - a.topic.change24h),
+   344→    [filters]
+   345→  );
+   346→
+   347→  const activeId = selectedTopicId ?? topicRows[0]?.topic.id ?? null;
+   348→  const activeRow = activeId ? (topicRows.find((r) => r.topic.id === activeId) ?? null) : null;
+   349→  const activeTopic = activeRow?.topic ?? getTopicById(activeId);
+   350→  const activeSeries = useMemo(() => {
+   351→    if (activeRow) return activeRow.series;
+   352→    if (activeTopic) return getTopicSeries(activeTopic, filters);
+   353→    return [];
+   354→  }, [activeRow, activeTopic, filters]);
+   355→
+   356→  /* drill-down sheet lifecycle */
+   357→  const sheetTopic = getTopicById(selectedTopicId);
+   358→  const sheetSeries = useMemo(
+   359→    () => (sheetTopic ? getTopicSeries(sheetTopic, filters) : []),
+   360→    [sheetTopic, filters]
+   361→  );
+   362→  const sheet24h = useMemo(
+   363→    () =>
+   364→      sheetTopic
+   365→        ? getTopicSeries(sheetTopic, { ...filters, range: "24h" }).reduce((a, p) => a + p.total, 0)
+   366→        : 0,
+   367→    [sheetTopic, filters]
+   368→  );
+   369→
+   370→  const emerging = topicRows.filter((r) => r.topic.emerging);
+   371→  const filteredRows =
+   372→    kw.trim() === ""
+   373→      ? topicRows
+   374→      : topicRows.filter((r) => {
+   375→          const hay = `${r.topic.label} ${r.topic.gloss} ${r.topic.category}`.toLowerCase();
+   376→          return kw
+   377→            .trim()
+   378→            .toLowerCase()
+   379→            .split(/\s+/)
+   380→            .every((tk) => hay.includes(tk.replace(/^[#:]/, "")));
+   381→        });
+   382→
+   383→  if (!ready) {
+   384→    return (
+   385→      <div className="space-y-4 animate-in fade-in duration-200">
+   386→        <PanelSkeleton height="h-14" />
+   387→        <PanelSkeleton height="h-80" />
+   388→        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   389→          <PanelSkeleton className="xl:col-span-5" height="h-64" />
+   390→          <PanelSkeleton className="xl:col-span-7" height="h-64" />
+   391→        </div>
+   392→      </div>
+   393→    );
+   394→  }
+   395→
+   396→  const windowLabel = WINDOW_LABEL[filters.range] ?? "window";
+   397→
+   398→  /* empty filter-bank state */
+   399→  if (topicRows.length === 0) {
+   400→    return (
+   401→      <div className="space-y-4 animate-in fade-in duration-300">
+   402→        <ScreenHeader
+   403→          kicker="MODULE 02 // TREND EXPLORER"
+   404→          title="Trend Explorer"
+   405→          description="Narrative velocity against historical baselines, spike detection and emerging-narrative flags across X and Telegram."
+   406→          right={<Badge tone="cyan" dot>{filters.platform === "all" ? "X + Telegram" : filters.platform === "x" ? "X only" : "Telegram only"}</Badge>}
+   407→        />
+   408→        <Panel title="Monitored narratives" icon={SearchX} sub="no results">
+   409→          <div className="flex flex-col items-center justify-center py-16 text-center">
+   410→            <SearchX className="size-8 text-muted-foreground/60" strokeWidth={1.5} />
+   411→            <p className="mt-3 text-sm font-medium text-foreground">
+   412→              No narratives match the current filter bank
+   413→            </p>
+   414→            <p className="mt-1 text-xs text-muted-foreground max-w-md">
+   415→              Adjust the platform, language or search filters in the top bar, or reset the filter
+   416→              bank to restore the monitored narrative set.
+   417→            </p>
+   418→            <Button variant="outline" size="sm" className="mt-4 h-7 text-[11px]" onClick={resetFilters}>
+   419→              Reset filter bank
+   420→            </Button>
+   421→          </div>
+   422→        </Panel>
+   423→      </div>
+   424→    );
+   425→  }
+   426→
+   427→  const topChips = topicRows.slice(0, 10);
+   428→  const moreChips = topicRows.slice(10);
+   429→
+   430→  /* velocity stats strip */
+   431→  const peak = activeSeries.length ? activeSeries.reduce((a, b) => (b.total > a.total ? b : a)) : null;
+   432→  const avgTotal = activeSeries.length
+   433→    ? activeSeries.reduce((a, p) => a + p.total, 0) / activeSeries.length
+   434→    : 0;
+   435→  const avgBase = activeSeries.length
+   436→    ? activeSeries.reduce((a, p) => a + p.baseline, 0) / activeSeries.length
+   437→    : 0;
+   438→  const vsBaseline = avgBase > 0 ? (avgTotal / avgBase - 1) * 100 : 0;
+   439→  const spikeCount = activeSeries.filter((p) => p.spike).length;
+   440→
+   441→  return (
+   442→    <div className="space-y-4 animate-in fade-in duration-300">
+   443→      <ScreenHeader
+   444→        kicker="MODULE 02 // TREND EXPLORER"
+   445→        title="Trend Explorer"
+   446→        description={`Narrative velocity against historical baselines for the ${windowLabel} — spike flags, emerging narratives and per-topic drill-down across X and Telegram.`}
+   447→        right={
+   448→          <div className="flex items-center gap-2">
+   449→            <Badge tone="cyan" dot>
+   450→              {filters.platform === "all" ? "X + Telegram" : filters.platform === "x" ? "X only" : "Telegram only"}
+   451→            </Badge>
+   452→            <Badge tone="neutral" dot>
+   453→              {topicRows.length} narratives
+   454→            </Badge>
+   455→            <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5" onClick={() => go("sentiment")}>
+   456→              Sentiment lab <ArrowUpRight className="size-3" />
+   457→            </Button>
+   458→          </div>
+   459→        }
+   460→      />
+   461→
+   462→      {/* topic selector */}
+   463→      <Panel
+   464→        title="Monitored narratives"
+   465→        icon={Hash}
+   466→        sub={`${topicRows.length} tracked`}
+   467→        bodyClassName="p-3"
+   468→        right={<span className="font-mono text-[10px] text-muted-foreground/70 hidden sm:inline">sorted by 24h Δ</span>}
+   469→      >
+   470→        <div className="flex flex-wrap items-center gap-1.5">
+   471→          {topChips.map(({ topic }) => (
+   472→            <Chip
+   473→              key={topic.id}
+   474→              active={topic.id === activeId}
+   475→              onClick={() => selectTopic(topic.id)}
+   476→              title={topic.gloss}
+   477→            >
+   478→              {topic.label}
+   479→              <span className="ml-1.5 font-mono text-[10px] tnum opacity-70">
+   480→                {fmtSigned(topic.change24h)}%
+   481→              </span>
+   482→            </Chip>
+   483→          ))}
+   484→          {moreChips.length > 0 && (
+   485→            <Select
+   486→              value={moreChips.some((r) => r.topic.id === activeId) ? (activeId ?? undefined) : undefined}
+   487→              onValueChange={(v) => selectTopic(v)}
+   488→            >
+   489→              <SelectTrigger
+   490→                size="sm"
+   491→                className="h-7 rounded-sm text-[11px] gap-1.5 px-2 font-medium text-muted-foreground"
+   492→                aria-label="More narratives"
+   493→              >
+   494→                <SelectValue placeholder={`+${moreChips.length} more`} />
+   495→              </SelectTrigger>
+   496→              <SelectContent className="rounded-md">
+   497→                {moreChips.map(({ topic }) => (
+   498→                  <SelectItem key={topic.id} value={topic.id} className="text-xs rounded-sm">
+   499→                    {topic.label}
+   500→                    <span className="ml-1.5 font-mono text-[10px] tnum text-muted-foreground">
+   501→                      {fmtSigned(topic.change24h)}%
+   502→                    </span>
+   503→                  </SelectItem>
+   504→                ))}
+   505→              </SelectContent>
+   506→            </Select>
+   507→          )}
+   508→        </div>
+   509→      </Panel>
+   510→
+   511→      {/* main velocity chart */}
+   512→      <Panel
+   513→        title="Narrative velocity"
+   514→        icon={Activity}
+   515→        sub={`${activeTopic?.label ?? "—"} · ${windowLabel}`}
+   516→        right={
+   517→          <Legend
+   518→            items={[
+   519→              { label: "Volume", color: CHART.orange },
+   520→              { label: "Baseline", color: CHART.cyan, dashed: true },
+   521→              { label: "Spike flag", color: CHART.amber },
+   522→            ]}
+   523→          />
+   524→        }
+   525→      >
+   526→        <div className="h-72 md:h-80 -mx-1">
+   527→          <ResponsiveContainer width="100%" height="100%">
+   528→            <ComposedChart data={activeSeries} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+   529→              <defs>
+   530→                <linearGradient id="tvVel" x1="0" y1="0" x2="0" y2="1">
+   531→                  <stop offset="0%" stopColor={CHART.orange} stopOpacity={0.5} />
+   532→                  <stop offset="100%" stopColor={CHART.orange} stopOpacity={0.16} />
+   533→                </linearGradient>
+   534→              </defs>
+   535→              <CartesianGrid stroke={chartTheme.grid} strokeDasharray={GRID.strokeDasharray} vertical={GRID.vertical} />
+   536→              <XAxis
+   537→                dataKey="t"
+   538→                type="number"
+   539→                domain={["dataMin", "dataMax"]}
+   540→                tickFormatter={(t: number) => {
+   541→                  const p = activeSeries.find((s) => s.t === t);
+   542→                  return p?.label ?? "";
+   543→                }}
+   544→                minTickGap={48}
+   545→                tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   546→                axisLine={{ stroke: chartTheme.grid }}
+   547→                tickLine={false}
+   548→              />
+   549→              <YAxis
+   550→                tickFormatter={(v: number) => fmtCompact(v)}
+   551→                width={44}
+   552→                tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   553→                axisLine={false}
+   554→                tickLine={false}
+   555→              />
+   556→              <Tooltip
+   557→                cursor={{ stroke: chartTheme.crosshair, strokeDasharray: "4 4" }}
+   558→                content={(props) => (
+   559→                  <ChartTooltip
+   560→                    {...props}
+   561→                    label={(() => {
+   562→                      const p = activeSeries.find(
+   563→                        (s) => s.t === (props as { payload?: { t?: number } }).payload?.t
+   564→                      );
+   565→                      return p?.label ?? "";
+   566→                    })()}
+   567→                    labelExtra={
+   568→                      (props as { payload?: { spike?: boolean } }).payload?.spike ? (
+   569→                        <Badge tone="amber">spike</Badge>
+   570→                      ) : null
+   571→                    }
+   572→                  />
+   573→                )}
+   574→              />
+   575→              <Area dataKey="total" name="Volume" stroke={CHART.orange} strokeWidth={1.5} fill="url(#tvVel)" />
+   576→              <Line
+   577→                dataKey="baseline"
+   578→                name="Baseline"
+   579→                stroke={CHART.cyan}
+   580→                strokeWidth={1.25}
+   581→                strokeDasharray="4 4"
+   582→                dot={false}
+   583→              />
+   584→              {activeSeries
+   585→                .filter((p) => p.spike)
+   586→                .map((p) => (
+   587→                  <ReferenceDot
+   588→                    key={p.t}
+   589→                    x={p.t}
+   590→                    y={p.total}
+   591→                    r={4}
+   592→                    fill={CHART.amber}
+   593→                    stroke="#0A0E14"
+   594→                    strokeWidth={1}
+   595→                  />
+   596→                ))}
+   597→            </ComposedChart>
+   598→          </ResponsiveContainer>
+   599→        </div>
+   600→        <div className="mt-3 grid grid-cols-3 gap-3 border-t border-border/60 pt-3">
+   601→          <div>
+   602→            <Taxonomy>Peak volume</Taxonomy>
+   603→            <div className="font-mono text-sm tnum text-foreground mt-0.5">
+   604→              {peak ? `${peak.label} · ${fmtCompact(peak.total)}` : "—"}
+   605→            </div>
+   606→          </div>
+   607→          <div>
+   608→            <Taxonomy>Avg vs baseline</Taxonomy>
+   609→            <div
+   610→              className={cn(
+   611→                "font-mono text-sm tnum mt-0.5",
+   612→                vsBaseline >= 0 ? "text-signal-green" : "text-signal-red"
+   613→              )}
+   614→            >
+   615→              {fmtSigned(vsBaseline, 1)}%
+   616→            </div>
+   617→          </div>
+   618→          <div>
+   619→            <Taxonomy>Spikes flagged</Taxonomy>
+   620→            <div className="font-mono text-sm tnum text-signal-amber mt-0.5">
+   621→              {spikeCount} vs baseline
+   622→            </div>
+   623→          </div>
+   624→        </div>
+   625→      </Panel>
+   626→
+   627→      {/* emerging narratives + keyword table */}
+   628→      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   629→        <Panel
+   630→          className="xl:col-span-5 min-w-0"
+   631→          title="Emerging narratives"
+   632→          icon={Sparkles}
+   633→          sub={`${emerging.length} flagged`}
+   634→          bodyClassName="p-0"
+   635→          scroll
+   636→        >
+   637→          {emerging.length === 0 ? (
+   638→            <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+   639→              No narratives exceeded their baseline in this window.
+   640→            </div>
+   641→          ) : (
+   642→            <div className="divide-y divide-border/60">
+   643→              {emerging.map(({ topic, series }) => (
+   644→                <button
+   645→                  key={topic.id}
+   646→                  type="button"
+   647→                  onClick={() => selectTopic(topic.id)}
+   648→                  className="w-full text-left px-4 py-3 hover:bg-accent transition-colors cursor-pointer group"
+   649→                >
+   650→                  <div className="flex items-center gap-2 min-w-0">
+   651→                    <Flame className="size-3.5 text-signal-orange shrink-0" />
+   652→                    <span className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+   653→                      {topic.label}
+   654→                    </span>
+   655→                    <Delta value={topic.change24h} className="ml-auto shrink-0" />
+   656→                  </div>
+   657→                  <div className="mt-0.5 text-[10px] text-muted-foreground truncate pl-[22px]">
+   658→                    {topic.gloss}
+   659→                  </div>
+   660→                  <div className="mt-2 flex items-center gap-3 pl-[22px]">
+   661→                    <Sparkline data={series.map((p) => p.total)} color={CHART.orange} width={96} height={22} />
+   662→                    <ScoreBar value={topic.risk} showValue className="flex-1 min-w-14" />
+   663→                    <span className="font-mono text-[10px] tnum text-muted-foreground shrink-0">
+   664→                      {topic.spikeDay !== null ? `spike −${topic.spikeDay}d` : "no spike"}
+   665→                    </span>
+   666→                  </div>
+   667→                </button>
+   668→              ))}
+   669→            </div>
+   670→          )}
+   671→        </Panel>
+   672→
+   673→        <Panel
+   674→          className="xl:col-span-7 min-w-0"
+   675→          title="Tracked keywords & hashtags"
+   676→          icon={Hash}
+   677→          sub={`${filteredRows.length}/${topicRows.length} tracked`}
+   678→          bodyClassName="p-0"
+   679→          right={
+   680→            <Legend
+   681→              items={[
+   682→                { label: "X", color: CHART.orange },
+   683→                { label: "TG", color: CHART.cyan },
+   684→              ]}
+   685→            />
+   686→          }
+   687→        >
+   688→          <div className="px-4 py-2.5 border-b border-border flex items-center gap-3">
+   689→            <div className="relative flex-1 max-w-xs">
+   690→              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+   691→              <Input
+   692→                value={kw}
+   693→                onChange={(e) => setKw(e.target.value)}
+   694→                placeholder="Filter keywords · hashtags · categories"
+   695→                className="h-7 rounded-sm pl-8 text-xs"
+   696→              />
+   697→            </div>
+   698→            <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground shrink-0">
+   699→              click a row to drill down
+   700→            </span>
+   701→          </div>
+   702→          <div className="overflow-auto max-h-[520px]">
+   703→            <table className="w-full text-left">
+   704→              <thead className="sticky top-0 bg-card z-10">
+   705→                <tr className="border-b border-border">
+   706→                  {["Keyword / hashtag", "Category", "Volume", "24h Δ", "Platforms", "Risk"].map((h) => (
+   707→                    <th key={h} className="taxonomy text-muted-foreground/70 font-semibold px-4 py-2 whitespace-nowrap">
+   708→                      {h}
+   709→                    </th>
+   710→                  ))}
+   711→                </tr>
+   712→              </thead>
+   713→              <tbody>
+   714→                {filteredRows.map(({ topic, volume }) => {
+   715→                  const meta = VELOCITY_META[topic.velocity];
+   716→                  return (
+   717→                    <tr
+   718→                      key={topic.id}
+   719→                      onClick={() => selectTopic(topic.id)}
+   720→                      className="border-b border-border/50 last:border-0 hover:bg-accent cursor-pointer transition-colors"
+   721→                    >
+   722→                      <td className="px-4 py-2.5">
+   723→                        <div className="flex items-center gap-2 min-w-0">
+   724→                          <meta.icon className={cn("size-3 shrink-0", meta.className)} strokeWidth={2} />
+   725→                          <div className="min-w-0">
+   726→                            <div className="text-xs font-medium text-foreground truncate max-w-40">
+   727→                              {topic.label}
+   728→                            </div>
+   729→                            <div className="text-[10px] text-muted-foreground truncate max-w-48 mt-0.5">
+   730→                              {topic.gloss}
+   731→                            </div>
+   732→                          </div>
+   733→                        </div>
+   734→                      </td>
+   735→                      <td className="px-4 py-2.5 whitespace-nowrap">
+   736→                        <Badge tone="slate">{topic.category}</Badge>
+   737→                      </td>
+   738→                      <td className="px-4 py-2.5 font-mono text-xs tnum text-foreground whitespace-nowrap">
+   739→                        {fmtCompact(volume)}
+   740→                      </td>
+   741→                      <td className="px-4 py-2.5 whitespace-nowrap">
+   742→                        <Delta value={topic.change24h} />
+   743→                      </td>
+   744→                      <td className="px-4 py-2.5">
+   745→                        <div
+   746→                          className="flex h-1.5 w-20 rounded-sm overflow-hidden bg-muted"
+   747→                          title={`X ${Math.round(topic.xShare * 100)}% · Telegram ${Math.round((1 - topic.xShare) * 100)}%`}
+   748→                        >
+   749→                          <div className="bg-signal-orange" style={{ width: `${topic.xShare * 100}%` }} />
+   750→                          <div className="bg-signal-cyan" style={{ width: `${(1 - topic.xShare) * 100}%` }} />
+   751→                        </div>
+   752→                      </td>
+   753→                      <td className="px-4 py-2.5 w-28">
+   754→                        <ScoreBar value={topic.risk} showValue />
+   755→                      </td>
+   756→                    </tr>
+   757→                  );
+   758→                })}
+   759→                {filteredRows.length === 0 && (
+   760→                  <tr>
+   761→                    <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted-foreground">
+   762→                      No tracked keywords match “{kw}”.
+   763→                    </td>
+   764→                  </tr>
+   765→                )}
+   766→              </tbody>
+   767→            </table>
+   768→          </div>
+   769→        </Panel>
+   770→      </div>
+   771→
+   772→      {/* drill-down sheet */}
+   773→      <Sheet open={sheetOpen} onOpenChange={handleSheetOpenChange}>
+   774→        <SheetContent side="right" className="w-[420px] sm:max-w-[420px] gap-0 overflow-y-auto">
+   775→          {sheetTopic && (
+   776→            <TopicDrill
+   777→              key={sheetTopic.id}
+   778→              topic={sheetTopic}
+   779→              series={sheetSeries}
+   780→              volume24h={sheet24h}
+   781→              onSelectTopic={(id) => selectTopic(id)}
+   782→            />
+   783→          )}
+   784→        </SheetContent>
+   785→      </Sheet>
+   786→
+   787→      <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
+   788→        <Users className="size-3" />
+   789→        Source: aggregated public posts (X, Telegram) · anonymised cohorts · window {windowLabel} ·
+   790→        prototype data
+   791→      </div>
+   792→    </div>
+   793→  );
+   794→}
+   795→
