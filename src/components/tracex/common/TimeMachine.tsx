@@ -14,7 +14,7 @@
  * timer, setState only inside the tick callback — lint-clean).
  */
 import { useMemo } from "react";
-import { Play, Pause, SkipBack, History } from "lucide-react";
+import { Play, Pause, SkipBack, History, CalendarSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtCompact } from "@/lib/fmt";
 
@@ -35,6 +35,7 @@ export function TimeMachine({
   onPlaying,
   speed = 1,
   onSpeed,
+  onInspect,
 }: {
   points: TimeMachinePoint[];
   /** null = live (full window). Otherwise index into points. */
@@ -45,6 +46,9 @@ export function TimeMachine({
   /** Playback speed multiplier (v0.14) — the host divides its base step. */
   speed?: number;
   onSpeed?: (s: number) => void;
+  /** Summon the day dossier for the playhead day (v0.16) — wired to a
+   *  toolbar button and to Enter on the scrub track. */
+  onInspect?: () => void;
 }) {
   const max = Math.max(0, points.length - 1);
   const isLive = cursor == null;
@@ -76,8 +80,14 @@ export function TimeMachine({
   };
 
   /* keyboard seeking KEEPS playback running (v0.14) — preventDefault so
-     the native range value change / onChange doesn't also fire + pause */
+     the native range value change / onChange doesn't also fire + pause.
+     v0.16: Enter summons the day dossier at the playhead. */
   const onTrackKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && onInspect) {
+      e.preventDefault();
+      onInspect();
+      return;
+    }
     let next: number | null = null;
     if (e.key === "ArrowRight") next = Math.min(max, pos + 1);
     else if (e.key === "ArrowLeft") next = Math.max(0, pos - 1);
@@ -199,6 +209,21 @@ export function TimeMachine({
             </button>
           ))}
         </div>
+      )}
+
+      {/* day dossier summon (v0.16) — opens the decomposed day at the
+          playhead; live has no as-of day, so it stays disabled there */}
+      {onInspect && (
+        <button
+          type="button"
+          onClick={onInspect}
+          disabled={isLive}
+          aria-label="Open the day dossier at the playhead"
+          title={isLive ? "Pause or scrub to a day first" : "Open the day dossier for the playhead day (⏎)"}
+          className="size-7 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-default shrink-0"
+        >
+          <CalendarSearch className="size-3.5" />
+        </button>
       )}
 
       {/* live toggle */}

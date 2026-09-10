@@ -32,6 +32,13 @@
  * - Briefing archive: generated reports persist (localStorage) and can
  *   be reopened from the Alerts module — the report workflow is now a
  *   loop rather than a one-shot modal.
+ *
+ * v0.16 additions:
+ * - `dossierDay` — a globally-summoneable day dossier (epoch of the
+ *   calendar day): the temporal replay, the ⌘K palette and the shareable
+ *   `#/overview/day:TS` deep-link all open the same dialog.
+ * - `setComparePair` — replace both A/B pins at once (day-dossier quick
+ *   action + natural-language "compare A vs B" palette query).
  */
 import {
   createContext,
@@ -121,10 +128,20 @@ interface AppState {
    *  state so the ⌘K palette can reach them) — max two, persisted. */
   compareIds: string[];
   toggleComparePin: (topicId: string) => "pinned" | "unpinned" | "full";
+  /** Replace both pins in one write (v0.16) — the dossier quick action and
+   *  the "compare X vs Y" palette query use this instead of two toggles. */
+  setComparePair: (a: string, b: string) => void;
   clearCompare: () => void;
   /** The A/B compare dialog (global, like the report modal). */
   compareOpen: boolean;
   setCompareOpen: (open: boolean) => void;
+
+  /** Summoned day dossier (v0.16) — epoch ms of the calendar day, or null.
+   *  Opened by the temporal replay, the palette, or a #/overview/day:TS
+   *  deep-link; rendered by the shell-level DayDossierDialog. Clicking a
+   *  heat cell still uses the anchored popover (HeatCalendar-local). */
+  dossierDay: number | null;
+  setDossierDay: (t: number | null) => void;
 
   /** Analyst notebook — per-claim notes, persisted across sessions. */
   claimNotes: Record<string, ClaimNote>;
@@ -239,6 +256,7 @@ interface HashTarget {
   screen: ScreenId;
   topicId?: string;
   claimId?: string;
+  dayT?: number;
 }
 
 function parseHash(): HashTarget | null {
@@ -250,11 +268,14 @@ function parseHash(): HashTarget | null {
   if (!screen) return null;
   const rest = parts.slice(1);
   const claimPart = rest.find((p) => p.startsWith("claim:"));
-  const topicPart = rest.find((p) => !p.startsWith("claim:"));
+  const dayPart = rest.find((p) => p.startsWith("day:"));
+  const topicPart = rest.find((p) => !p.startsWith("claim:") && !p.startsWith("day:"));
+  const dayT = dayPart ? Number(dayPart.slice("day:".length)) : undefined;
   return {
     screen,
     topicId: topicPart || undefined,
     claimId: claimPart ? claimPart.slice("claim:".length) : undefined,
+    dayT: Number.isFinite(dayT) ? dayT : undefined,
   };
 }
 
@@ -272,6 +293,7 @@ const INITIAL = (() => {
       screen: "overview" as ScreenId,
       topicId: null as string | null,
       claimId: null as string | null,
+      dayT: null as number | null,
     };
   }
   const persisted = loadPersisted();
@@ -286,6 +308,7 @@ const INITIAL = (() => {
     screen: hash?.screen ?? "overview",
     topicId: (hash?.topicId ?? null) as string | null,
     claimId: (hash?.claimId ?? null) as string | null,
+    dayT: (hash?.dayT ?? null) as number | null,
   };
 })();
 
@@ -309,6 +332,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [compareOpen, setCompareOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
+  const [dossierDay, setDossierDay] = useState<number | null>(INITIAL.dayT);
   const [refreshKey, setRefreshKey] = useState(0);
   /* live alert bus (v0.12): arriving alerts live here so the bell, the
      Overview feed and the tab-title unread count all share one source. */
@@ -346,6 +370,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const parts: string[] = [screen];
     if (selectedTopicId) parts.push(selectedTopicId);
     if (screen === "misinfo" && selectedClaimId) parts.push(`claim:${selectedClaimId}`);
+    if (screen === "overview" && dossierDay != null) parts.push(`day:${dossierDay}`);
     const nextHash = `#/${parts.join("/")}`;
     if (window.location.hash !== nextHash) {
       if (firstHashWriteRef.current) {
@@ -361,7 +386,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {
       /* private mode / quota — persistence is best-effort */
     }
-  }, [screen, selectedTopicId, selectedClaimId, filters, watchlist, savedViews, claimNotes, reports, compareIds]);
+  }, [screen, selectedTopicId, selectedClaimId, dossierDay, filters, watchlist, savedViews, claimNotes, reports, compareIds]);
 
   /* Browser Back/Forward + manual hash edits: restore console state from
    * the target hash. setState lives in the event handler (not an effect),
@@ -375,10 +400,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setScreen("overview");
         setSelectedTopicId(null);
         setSelectedClaimId(null);
+        setDossierDay(null);
       } else {
         setScreen(target.screen);
         setSelectedTopicId(target.topicId ?? null);
         setSelectedClaimId(target.claimId ?? null);
+        setDossierDay(target.dayT ?? null);
       }
       window.scrollTo({ top: 0 });
     };
@@ -442,6 +469,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setScreen(s);
     if (opts?.topicId !== undefined) setSelectedTopicId(opts.topicId);
     if (opts?.claimId !== undefined) setSelectedClaimId(opts.claimId);
+    /* leaving the screen also dismisses the summoned day dossier — the
+       popover/dialog is overview-scoped by design; callers that want a
+       dossier open on arrival set it AFTER go() (event-handler order) */
+    setDossierDay(null);
     window.scrollTo({ top: 0 });
   }, []);
 
@@ -466,6 +497,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const clearCompare = useCallback(() => setCompareIds([]), []);
+
+  /* ---- one-shot pair replacement (v0.16) ---- */
+  const setComparePair = useCallback((a: string, b: string) => {
+    if (!a || !b || a === b) return;
+    setCompareIds([a, b]);
+  }, []);
 
   /* ---- saved views ---- */
   const saveView = useCallback(
@@ -588,9 +625,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isWatched: (topicId: string) => watchlist.includes(topicId),
       compareIds,
       toggleComparePin,
+      setComparePair,
       clearCompare,
       compareOpen,
       setCompareOpen,
+      dossierDay,
+      setDossierDay,
       savedViews,
       saveView,
       applyView,
@@ -625,8 +665,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleWatchlist,
       compareIds,
       toggleComparePin,
+      setComparePair,
       clearCompare,
       compareOpen,
+      dossierDay,
       savedViews,
       saveView,
       applyView,

@@ -4,11 +4,11 @@
  * ⌘K Command Palette — Palantir-style operator console quick actions:
  * jump modules, pull up narratives/claims/influencers, switch filter banks.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/app-state";
 import { useTheme } from "next-themes";
-import { TOPICS, getClaims, getInfluencers, LANGUAGES, NOW } from "@/lib/mock";
-import { fmtCompact, relTime } from "@/lib/fmt";
+import { TOPICS, getClaims, getInfluencers, getVolumeSeries, LANGUAGES, NOW } from "@/lib/mock";
+import { fmtCompact, fmtDayIST, relTime } from "@/lib/fmt";
 import {
   CommandDialog,
   CommandInput,
@@ -44,6 +44,7 @@ import {
   Footprints,
   FlaskConical,
   GitCompareArrows,
+  CalendarSearch,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ScreenId } from "@/lib/mock/types";
@@ -86,8 +87,31 @@ const tokenFilter: (value: string, search: string) => number = (value, search) =
   return score;
 };
 
+/* ---- natural-language compare intent (v0.16) ----
+   "compare gaganyaan vs neet" → resolve each side to a narrative
+   (exact id/label first, then substring across id/label/gloss so
+   romanized fragments keep working) and arm the global A/B pair. */
+const COMPARE_RE = /^\s*compare\s+(.+?)\s+(?:vs\.?|versus)\s+(.+?)\s*$/i;
+
+const sideTopic = (q: string) => {
+  const s = q.trim().toLowerCase();
+  if (!s) return undefined;
+  return (
+    TOPICS.find((t) => t.id.toLowerCase() === s || t.label.toLowerCase() === s) ??
+    TOPICS.find(
+      (t) =>
+        t.id.toLowerCase().includes(s) ||
+        t.label.toLowerCase().includes(s) ||
+        t.gloss.toLowerCase().includes(s)
+    )
+  );
+};
+
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
+  /* live query feed (v0.16) — cmdk's onValueChange drives the
+     natural-language compare intent below */
+  const [query, setQuery] = useState("");
   const {
     go,
     setSelectedTopicId,
@@ -102,12 +126,31 @@ export function CommandPalette() {
     applyView,
     isViewActive,
     compareIds,
+    setComparePair,
     setCompareOpen,
+    setDossierDay,
   } = useApp();
   const { resolvedTheme, setTheme } = useTheme();
 
   const claims = getClaims({ ...filters, query: "" });
   const influencers = getInfluencers(filters, 6);
+
+  /* latest 30d spike day (falls back to the most recent day when the
+     window is quiet) — the palette's day-dossier summon target */
+  const dossierTarget = useMemo(() => {
+    const days = getVolumeSeries({ ...filters, range: "30d" });
+    const spike = [...days].reverse().find((d) => d.spike);
+    return spike ?? days[days.length - 1];
+  }, [filters]);
+
+  const nlCompare = useMemo(() => {
+    const m = query.match(COMPARE_RE);
+    if (!m) return null;
+    const a = sideTopic(m[1]);
+    const b = sideTopic(m[2]);
+    if (!a || !b || a.id === b.id) return null;
+    return { a, b };
+  }, [query]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -153,7 +196,10 @@ export function CommandPalette() {
         className="sm:max-w-xl"
         filter={tokenFilter}
       >
-        <CommandInput placeholder="Type a module, narrative, claim, handle or action…" />
+        <CommandInput
+          placeholder="Type a module, narrative, claim, handle — or “compare X vs Y”…"
+          onValueChange={setQuery}
+        />
         <CommandList className="max-h-[420px]">
           <CommandEmpty>No telemetry matches that query.</CommandEmpty>
 
@@ -200,6 +246,36 @@ export function CommandPalette() {
 
           <CommandSeparator />
 
+          {/* Natural-language compare (v0.16): "compare gaganyaan vs neet"
+              resolves both sides and arms the global A/B pair — the item's
+              value embeds the resolved ids/labels/glosses so the strict
+              token filter keeps it ranked at the top */}
+          {nlCompare && (
+            <>
+              <CommandGroup heading="Narrative A/B — natural language">
+                <CommandItem
+                  value={`compare ${nlCompare.a.id} vs ${nlCompare.b.id} ${nlCompare.a.label} ${nlCompare.b.label} ${nlCompare.a.gloss} ${nlCompare.b.gloss} versus ab pins`}
+                  onSelect={() => {
+                    setComparePair(nlCompare.a.id, nlCompare.b.id);
+                    go("trends");
+                    setCompareOpen(true);
+                    setOpen(false);
+                    toast(`A/B armed: ${nlCompare.a.label} vs ${nlCompare.b.label}`, {
+                      description: "Pinned from the command palette — compare console opening.",
+                    });
+                  }}
+                >
+                  <GitCompareArrows className="size-3.5 text-primary" />
+                  <span className="truncate max-w-64">
+                    Compare {nlCompare.a.label} vs {nlCompare.b.label}
+                  </span>
+                  <CommandShortcut className="font-mono text-[10px]">A/B</CommandShortcut>
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+            </>
+          )}
+
           {/* A/B compare (v0.15): appears once two narratives are pinned —
               pins are global state, so this works from any screen */}
           {compareIds.length === 2 && (
@@ -218,6 +294,34 @@ export function CommandPalette() {
                     Compare {compareLabel(compareIds[0])} vs {compareLabel(compareIds[1])}
                   </span>
                   <CommandShortcut className="font-mono text-[10px]">A/B</CommandShortcut>
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+            </>
+          )}
+
+          {/* Day-level intelligence (v0.16): summon the decomposed day
+              dossier for the window's latest spike — same dialog the
+              temporal replay and the shareable day links open */}
+          {dossierTarget && (
+            <>
+              <CommandGroup heading="Day-level intelligence">
+                <CommandItem
+                  value={`day dossier ${dossierTarget.spike ? "spike" : "calendar"} heat inspect decompose anomaly ${dossierTarget.label}`}
+                  onSelect={() => {
+                    go("overview");
+                    setDossierDay(dossierTarget.t);
+                    setOpen(false);
+                  }}
+                >
+                  <CalendarSearch className="size-3.5 text-primary" />
+                  <span>Day dossier — {dossierTarget.spike ? "latest spike day" : "latest day"}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground truncate hidden sm:inline">
+                    {fmtDayIST(dossierTarget.t)}
+                  </span>
+                  <CommandShortcut className="font-mono text-[10px]">
+                    {dossierTarget.spike ? "SPIKE" : "30D"}
+                  </CommandShortcut>
                 </CommandItem>
               </CommandGroup>
               <CommandSeparator />

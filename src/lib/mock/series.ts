@@ -433,6 +433,11 @@ export function getDayDossier(t: number, filters: Filters): DayDossier | null {
     .map(({ topic }) => {
       const ts = getTopicSeries(topic, f30);
       const p = ts[idx];
+      /* ±3-day context window (v0.16) — clamped at the window edges, so a
+         day at either end still gets a (shorter) trend strip; contextIdx
+         marks which point is "this day" for the sparkline marker */
+      const lo = Math.max(0, idx - 3);
+      const hi = Math.min(ts.length - 1, idx + 3);
       return {
         id: topic.id,
         label: topic.label,
@@ -441,6 +446,8 @@ export function getDayDossier(t: number, filters: Filters): DayDossier | null {
         spike: p?.spike ?? false,
         velocity: topic.velocity,
         risk: topic.risk,
+        context: ts.slice(lo, hi + 1).map((w) => w.total),
+        contextIdx: idx - lo,
       };
     })
     .sort((x, y) => y.dayVolume - x.dayVolume)

@@ -12,6 +12,7 @@ export function Sparkline({
   strokeWidth = 1.5,
   area = true,
   baseline,
+  markIdx,
   className,
 }: {
   data: number[];
@@ -21,6 +22,9 @@ export function Sparkline({
   strokeWidth?: number;
   area?: boolean;
   baseline?: number; // optional dashed reference y value
+  /** Optional marked data point (v0.16) — hairline + dot, e.g. "this day"
+   *  inside a day-dossier narrative context strip. */
+  markIdx?: number;
   className?: string;
 }) {
   const gid = useId().replace(/[:]/g, "");
@@ -66,6 +70,21 @@ export function Sparkline({
         />
       )}
       <path d={line} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" strokeLinecap="round" />
+      {markIdx != null && markIdx >= 0 && markIdx < data.length && (
+        <>
+          <line
+            x1={x(markIdx)}
+            x2={x(markIdx)}
+            y1={pad}
+            y2={height - pad}
+            stroke={color}
+            strokeWidth="1"
+            strokeDasharray="1.5 2"
+            opacity="0.55"
+          />
+          <circle cx={x(markIdx)} cy={y(data[markIdx])} r="2.4" fill={color} stroke="var(--card)" strokeWidth="1" />
+        </>
+      )}
       <circle cx={x(data.length - 1)} cy={y(data[data.length - 1])} r="1.8" fill={color} />
     </svg>
   );

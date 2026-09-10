@@ -51,6 +51,8 @@ const SHORTCUTS: { group: string; items: Hotkey[] }[] = [
       { keys: ["Tab"], label: "Focus the heat calendar, then Enter to open the day dossier (Overview) or pivot trends" },
       { keys: ["A/B"], label: "Pin two narratives in the trends table, then compare — also reachable from ⌘K" },
       { keys: ["▶"], label: "Overview temporal replay — scrub 30 days of corpus, KPIs and trends rewind with it" },
+      { keys: ["⏎"], label: "While scrubbing — summon the day dossier for the playhead's calendar day" },
+      { keys: ["⌘K"], label: "Type “compare <narrative> vs <narrative>” in the palette to arm the A/B pair" },
     ],
   },
 ];

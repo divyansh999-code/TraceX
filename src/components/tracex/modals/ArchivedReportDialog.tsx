@@ -60,7 +60,8 @@ export function ArchivedReportDialog({
   };
 
   /* findings-level CSV export (v0.15): one row per archived finding, with
-     the snapshot KPIs repeated on every row for spreadsheet pivoting */
+     the snapshot KPIs repeated on every row for spreadsheet pivoting.
+     v0.16: finding tone column added (green/amber/red classification). */
   const exportCsv = () => {
     if (!r) return;
     downloadCsv(
@@ -76,6 +77,7 @@ export function ArchivedReportDialog({
         "finding_no",
         "finding_label",
         "finding_value",
+        "finding_tone",
       ],
       r.findings.map((f, i) => [
         r.docId,
@@ -88,6 +90,9 @@ export function ArchivedReportDialog({
         i + 1,
         f.label,
         f.value,
+        /* tone classes collapse to a stable three-bucket classification
+           so the column stays spreadsheet-friendly */
+        f.tone.includes("green") ? "positive" : f.tone.includes("red") ? "adverse" : "watch",
       ])
     );
     toast.success("Briefing CSV exported", {

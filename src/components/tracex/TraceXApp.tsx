@@ -19,6 +19,7 @@ import { HotkeyHelp } from "./shell/HotkeyHelp";
 import { GuidedTour } from "./shell/GuidedTour";
 import { ReportModal } from "./modals/ReportModal";
 import { MethodologyDialog } from "./modals/MethodologyDialog";
+import { DayDossierDialog } from "./modals/DayDossierDialog";
 import { OverviewScreen } from "./screens/OverviewScreen";
 import { TrendsScreen } from "./screens/TrendsScreen";
 import { SentimentScreen } from "./screens/SentimentScreen";
@@ -175,6 +176,8 @@ function Console() {
       <ReportModal open={reportOpen} onOpenChange={setReportOpen} />
       {/* methodology & provenance briefing — palette / cheatsheet reachable */}
       <MethodologyDialog />
+      {/* summoned day dossier — replay ⏎ / palette / shareable #/overview/day:TS */}
+      <DayDossierDialog />
     </div>
   );
 }

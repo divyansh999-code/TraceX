@@ -285,7 +285,7 @@ function ModuleStrip() {
 /* ---------------- Main screen ---------------- */
 
 export function OverviewScreen() {
-  const { filters, go, setRange, alertsFeed } = useApp();
+  const { filters, go, setRange, alertsFeed, setDossierDay } = useApp();
   const ready = useRefresh("overview");
 
   const kpis = useMemo(() => getKpis(filters), [filters]);
@@ -349,6 +349,16 @@ export function OverviewScreen() {
     [series, isLive, effCursor]
   );
   const viewEnd = view[view.length - 1];
+
+  /* v0.16: summon the day dossier for the playhead's calendar day — the
+     playhead may sit on an hourly/3-hourly bucket (24h/7d ranges), so map
+     its timestamp onto the containing 30d heat day */
+  const onInspectPlayhead = () => {
+    const p = series[effCursor];
+    if (!p) return;
+    const d = heatDays.find((h) => p.t >= h.t && p.t < h.t + 86_400_000);
+    if (d) setDossierDay(d.t);
+  };
 
   const totalVol = useMemo(() => series.reduce((a, p) => a + p.total, 0) || 1, [series]);
   const viewVol = useMemo(() => view.reduce((a, p) => a + p.total, 0), [view]);
@@ -694,7 +704,7 @@ export function OverviewScreen() {
             <div className="flex items-center gap-2 flex-wrap">
               <Taxonomy>Temporal replay</Taxonomy>
               <span className="font-mono text-[9px] text-muted-foreground/60 hidden md:inline">
-                ←/→ seek · End → live
+                ←/→ seek · ⏎ day dossier · End → live
               </span>
             </div>
             <div className="mt-2">
@@ -706,6 +716,7 @@ export function OverviewScreen() {
                 onPlaying={setPlaying}
                 speed={speed}
                 onSpeed={setSpeed}
+                onInspect={onInspectPlayhead}
               />
             </div>
           </div>

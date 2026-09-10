@@ -6,15 +6,24 @@
  * volume vs baseline, platform split, sentiment mix, the narratives that
  * dominated it and the claims in play — with a hand-off into the Trend
  * Explorer for the full 30-day window.
+ *
+ * v0.16: every narrative row carries a ±3-day volume sparkline (risk-toned,
+ * hairline marker on this day); a one-tap "A/B top 2" action pins the two
+ * dominant narratives into the global compare; the footer copies a shareable
+ * `#/overview/day:TS` deep-link. The same body renders inside the anchored
+ * popover AND the shell-level DayDossierDialog (replay / palette / link).
  */
 import { useMemo } from "react";
 import type { Filters } from "@/lib/mock/types";
 import { getDayDossier } from "@/lib/mock";
 import { fmtCompact, fmtDayIST, fmtFull, fmtSigned, riskTone } from "@/lib/fmt";
+import { useApp } from "@/lib/app-state";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { Badge, Taxonomy } from "./primitives";
+import { Sparkline } from "./Sparkline";
 import type { HeatDay } from "./HeatCalendar";
-import { AtSign, Send, Flame, ShieldAlert, ArrowUpRight, CalendarDays } from "lucide-react";
+import { AtSign, Send, Flame, ShieldAlert, ArrowUpRight, CalendarDays, GitCompareArrows, Link2 } from "lucide-react";
 
 const STATUS_TONE: Record<string, "red" | "amber" | "cyan" | "slate"> = {
   False: "red",
@@ -22,6 +31,33 @@ const STATUS_TONE: Record<string, "red" | "amber" | "cyan" | "slate"> = {
   Unverified: "slate",
   Verified: "cyan",
 };
+
+/* risk tone → sparkline stroke (mirrors the v0.15 share-bar colours) */
+const RISK_SPARK_COLOR = (risk: number) =>
+  risk >= 0.65 ? "#D9564F" : risk >= 0.4 ? "#D9A441" : "#5FA1C4";
+
+/** Clipboard with a textarea fallback for non-secure preview contexts. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    /* fall through to the legacy path */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 export function DayDossier({
   day,
@@ -32,6 +68,7 @@ export function DayDossier({
   filters: Filters;
   onOpenTrends: (day: HeatDay) => void;
 }) {
+  const { setComparePair, go, setCompareOpen } = useApp();
   const dossier = useMemo(() => getDayDossier(day.t, filters), [day.t, filters]);
 
   if (!dossier) {
@@ -44,6 +81,29 @@ export function DayDossier({
 
   const vsBase = dossier.vsBaseline;
   const tone = vsBase > 40 ? "text-signal-red" : vsBase > 8 ? "text-signal-amber" : vsBase < -8 ? "text-signal-cyan" : "text-muted-foreground";
+  const [topA, topB] = dossier.narratives;
+
+  const compareTop2 = () => {
+    if (!topA || !topB) return;
+    setComparePair(topA.id, topB.id);
+    go("trends");
+    setCompareOpen(true);
+    toast(`A/B armed: ${topA.label} vs ${topB.label}`, {
+      description: "The day's two dominant narratives, pinned into the compare console.",
+    });
+  };
+
+  const copyDayLink = async () => {
+    const url = `${window.location.origin}${window.location.pathname}#/overview/day:${dossier.t}`;
+    const ok = await copyText(url);
+    if (ok) {
+      toast.success("Day dossier link copied", {
+        description: `${fmtDayIST(dossier.t)} — restores the console with this dossier open.`,
+      });
+    } else {
+      toast.error("Clipboard unavailable", { description: "Browser denied clipboard access." });
+    }
+  };
 
   return (
     <div className="w-80 max-w-[calc(100vw-2rem)]">
@@ -93,21 +153,42 @@ export function DayDossier({
           </div>
         </div>
 
-        {/* dominant narratives */}
+        {/* dominant narratives — v0.16: ±3-day volume context sparkline
+            (risk-toned stroke, dashed hairline marks THIS day) replaces
+            the static share bar; share% stays in the mono readout */}
         <div className="border-t border-border/70 pt-2.5">
-          <Taxonomy>Narratives that day</Taxonomy>
+          <div className="flex items-center gap-2">
+            <Taxonomy>Narratives that day</Taxonomy>
+            {topA && topB && (
+              <button
+                type="button"
+                onClick={compareTop2}
+                title={`Pin ${topA.label} vs ${topB.label} into the A/B compare console`}
+                className="ml-auto inline-flex items-center gap-1 h-5 px-1.5 rounded-sm border border-border text-[9px] font-mono text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors cursor-pointer"
+              >
+                <GitCompareArrows className="size-2.5" />
+                A/B top 2
+              </button>
+            )}
+          </div>
           <ul className="mt-1.5 space-y-1.5">
             {dossier.narratives.map((n) => (
               <li key={n.id} className="flex items-center gap-2">
                 <Flame className={cn("size-3 shrink-0", n.spike ? "text-signal-red" : "text-muted-foreground/50")} strokeWidth={1.75} />
                 <span className="text-xs text-foreground truncate min-w-0 flex-1" title={n.label}>{n.label}</span>
-                <div className="h-1 w-14 rounded-sm bg-muted overflow-hidden shrink-0" aria-hidden="true">
-                  <div
-                    className={cn("h-full rounded-sm", n.risk >= 0.65 ? "bg-signal-red" : n.risk >= 0.4 ? "bg-signal-amber" : "bg-signal-cyan")}
-                    style={{ width: `${Math.max(4, n.share * 100)}%` }}
-                  />
-                </div>
-                <span className="font-mono text-[10px] tnum text-muted-foreground shrink-0 w-16 text-right" title="day volume · share of corpus">
+                <Sparkline
+                  data={n.context}
+                  markIdx={n.contextIdx}
+                  color={RISK_SPARK_COLOR(n.risk)}
+                  width={56}
+                  height={16}
+                  strokeWidth={1.25}
+                  className="shrink-0"
+                />
+                <span
+                  className="font-mono text-[10px] tnum text-muted-foreground shrink-0 w-16 text-right"
+                  title="day volume · share of corpus · sparkline = ±3-day context, marker = this day"
+                >
                   {fmtCompact(n.dayVolume)} · {Math.round(n.share * 100)}%
                 </span>
               </li>
@@ -149,16 +230,27 @@ export function DayDossier({
         </div>
       </div>
 
-      {/* footer hand-off */}
-      <button
-        type="button"
-        onClick={() => onOpenTrends(day)}
-        className="w-full flex items-center gap-2 px-3.5 h-9 border-t border-border text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer group"
-      >
-        <Send className="size-3 shrink-0" strokeWidth={1.75} />
-        <span>Open 30-day window in Trend Explorer</span>
-        <ArrowUpRight className="size-3 ml-auto shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-      </button>
+      {/* footer hand-off + shareable deep-link (v0.16) */}
+      <div className="flex items-stretch border-t border-border">
+        <button
+          type="button"
+          onClick={() => onOpenTrends(day)}
+          className="flex-1 flex items-center gap-2 px-3.5 h-9 text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer group min-w-0"
+        >
+          <Send className="size-3 shrink-0" strokeWidth={1.75} />
+          <span className="truncate">Open 30-day window in Trend Explorer</span>
+          <ArrowUpRight className="size-3 ml-auto shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+        </button>
+        <button
+          type="button"
+          onClick={copyDayLink}
+          aria-label="Copy shareable day dossier link"
+          title="Copy a deep-link that reopens this dossier"
+          className="w-9 shrink-0 flex items-center justify-center border-l border-border text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer"
+        >
+          <Link2 className="size-3" strokeWidth={1.75} />
+        </button>
+      </div>
     </div>
   );
 }

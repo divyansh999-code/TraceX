@@ -5,12 +5,24 @@ aesthetic. NO real backend — all data from the deterministic mock layer.
 
 ## Project status
 
+- **v0.16.0 — STABLE.** All 8 modules interactive; lint 0/0, tsc 0 app
+  errors, zero console errors across the full hotkey sweep (round 8 QA).
 - Next.js 16 App Router, TypeScript, Tailwind CSS 4, shadcn/ui, recharts,
   lucide-react, framer-motion, d3-force (custom SVG force graph).
 - Dev server: `bun run dev` on port 3000 (already running, logs in dev.log).
 - Single user route: `/` (src/app/page.tsx → TraceXApp).
 - Theme: next-themes, class strategy, DARK default. Fonts: Newsreader
   (display, `font-display`), IBM Plex Sans (body), JetBrains Mono (data).
+- Headline features (v0.10 → v0.16): ⌘K palette (strict token filter +
+  natural-language "compare X vs Y" + saved views), narrative watchlist,
+  session persistence + URL deep-links (`#/screen`, `#/trends/topic`,
+  `#/misinfo/claim:ID`, `#/overview/day:TS`), history-aware Back/Forward,
+  global report modal + briefing archive (CSV w/ tone), live alert bus
+  (bell + title suffix + audio cue), analyst notebook, temporal replay
+  (time machine w/ speed + keyboard seek + ⏎ day dossier), guided tour,
+  methodology dialog, A/B compare (pins + verdict banner), day dossier
+  (anchored popover + summoned dialog + ±3-day narrative sparklines +
+  shareable links), heat-calendar keyboard nav, CSV exports on 5 tables.
 
 ## Foundation (Task 2 — COMPLETE)
 
@@ -386,3 +398,44 @@ Stage Summary:
 - Files added: src/components/tracex/common/DayDossier.tsx.
 - Files changed: src/lib/mock/series.ts (+getDayDossier), src/lib/mock/types.ts (DayDossier types), src/lib/mock/index.ts (export), src/lib/app-state.tsx (compare state + persistence), src/lib/live-feed.ts (pause/resume), src/lib/fmt.ts (fmtDayIST), HeatCalendar.tsx (inspector popover + titles + day-only labels), OverviewScreen.tsx (dossier wiring), TrendsScreen.tsx (global compare consumption), CompareDialog.tsx (verdict banner), CommandPalette.tsx (A/B group), GuidedTour.tsx (feed pause), ArchivedReportDialog.tsx (CSV), AlertsScreen.tsx (archive chips), HotkeyHelp.tsx (entries), StatusBar.tsx (v0.15.0).
 - Remaining ideas for next round: day dossier could get mini sparkline per narrative (24h before/after context); dossier "compare these two narratives" quick action when a spiking day shows 2 close narratives; replay playhead could open the matching day dossier on Enter; palette compare entry could accept direct query like "compare gaganyaan vs neet"; archive CSV could include the findings tone column; VLM visual review still pending service availability; consider a "share day dossier" deep-link hash format.
+
+---
+Task ID: 13 (webDevReview round 8)
+Agent: main (orchestrator, cron-triggered)
+Task: QA sweep + v0.16 feature round — day-dossier narrative sparklines, dossier A/B top-2 quick action, replay ⏎ day dossier, shareable day deep-links, natural-language "compare X vs Y" palette query, archive CSV tone column
+
+Work Log:
+- Read worklog; assessed state: dev server healthy (all 200s), lint 0/0, tsc 0 app errors, v0.15.0 stable.
+- QA DISCOVERY — fresh-browser-profile sweep initially looked like hotkeys were dead (all 8 keys → title stayed "Mission Control"): root cause was the guided TOUR auto-starting on a profile without `tracex.tour.v1` (by design), which mutes module hotkeys via the body-class guard. Verified tour exits cleanly (Esc → class removed, flag written, dialog unmounted) and re-ran the sweep: all 8 screens navigate with dynamic titles, ZERO console errors. NOT a bug — documented as designed first-visit behaviour.
+- Pre-change QA sweep: deep-link #/misinfo/claim:CLM-2041 restore; palette "kisan" romanized search → trends drill-down sheet; day-dossier popover (click a heat cell); A/B pins + verdict banner; platform filter re-query (55M → 40M on X-only); light mode; live-alert title suffix "(N)" ticking — all verified, zero console errors.
+- NEW FEATURE 1 — Day-dossier narrative sparklines (±3-day context):
+  - mock/types.ts: DayNarrativeSlice gained `context: number[]` + `contextIdx: number`.
+  - series.ts getDayDossier: computes the ±3-day window (clamped at edges) from the topic's 30d series; contextIdx marks "this day".
+  - Sparkline.tsx: new `markIdx` prop — dashed vertical hairline + marked dot on the playhead/marked point (additive).
+  - DayDossier.tsx: the static share bar per narrative row is replaced by a risk-toned 56×16 sparkline (red ≥0.65 / amber ≥0.4 / cyan) with the day marker; share% stays in the mono readout; tooltip explains "±3-day context, marker = this day".
+- NEW FEATURE 2 — "A/B top 2" dossier quick action:
+  - app-state: new `setComparePair(a, b)` — one-shot replacement of both compare pins (avoids the two-toggle stale-closure class of bugs entirely).
+  - DayDossier: when the day has ≥2 narratives, a compact chip beside the "Narratives that day" header pins the top 2, navigates to trends and opens the compare dialog (works from BOTH the anchored popover and the new summoned dialog).
+- NEW FEATURE 3 — Replay playhead → day dossier:
+  - TimeMachine.tsx: new `onInspect` prop — CalendarSearch icon button (disabled while LIVE) + Enter on the scrub track both summon the dossier for the playhead's calendar day.
+  - OverviewScreen: maps the playhead timestamp (hourly/3h buckets included) onto its containing 30d heat day, then opens the global dossier dialog.
+- NEW FEATURE 4 — Shareable day deep-links:
+  - app-state: `dossierDay` (epoch) + setter; hash format `#/overview/day:TS` (parse/write/popstate restore); `go()` clears it so navigation dismisses the summoned dossier.
+  - New modals/DayDossierDialog.tsx — shell-level centered dialog rendering the SAME DayDossier body (mounted once in TraceXApp; reachable from any screen via palette/replay/link). Anchored popover for clicks stays HeatCalendar-local.
+  - BUG FOUND + FIXED during QA: mock `NOW = Date.now()` re-anchors series bucket timestamps on every page load, so exact-match day lookups broke across reloads (link opened "No calendar day matches"). Fixed with closest-bucket matching (drift is seconds; day granularity 24h) — reload restore verified.
+  - DayDossier footer gained a Link2 "copy day dossier link" button (clipboard API with execCommand textarea fallback + success/error toasts; headless env denies clipboard — error path verified; real browsers grant it).
+- NEW FEATURE 5 — Natural-language "compare X vs Y" (⌘K):
+  - CommandPalette: live query feed via `CommandInput onValueChange` (cmdk Input-level subscription; the Command ROOT onValueChange tracks item selection — first implementation attempt attached it there and silently never fired; fixed).
+  - `compare <side> vs/versus <side>` regex; sides resolve against TOPICS by exact id/label then substring across id/label/gloss (romanized fragments work). Item value embeds the resolved ids/labels/glosses so the strict token filter keeps it top-ranked. Enter → setComparePair + trends + compare dialog + toast.
+- NEW FEATURE 6 — Palette "Day dossier — latest spike day" entry: new "Day-level intelligence" group computes the latest 30d spike day (fallback: most recent day) and summons the global dossier dialog from any screen.
+- FEATURE 7 — Archived briefing CSV tone column: finding_tone (positive/watch/adverse collapsed from the tone classes) appended; CSV content verified in-browser via a createObjectURL FileReader probe ("finding_tone … watch").
+- Docs/copy: HotkeyHelp +2 entries (⏎ dossier while scrubbing; compare-query hint); GuidedTour time-machine step mentions ⏎, final card teaches "compare x vs y"; scrubber hint "←/→ seek · ⏎ day dossier · End → live"; palette placeholder mentions the compare syntax; StatusBar → v0.16.0.
+- VERIFICATION (agent-browser, session tracex-qa16): dossier popover — 4 sparklines render (paths + 1 marker + 2 dots each, 16px, geometry-asserted), A/B top 2 button, copy-link button; A/B top 2 → trends + compare dialog + verdict ("leads 4 of 6"); palette "compare gaganyaan vs neet" → single option → Enter → #/trends + dialog + verdict ("#GaganyaanLaunch leads all 6 headline metrics") + "2/2 pinned"; palette "day dossier" → dialog (09 Sept, spike badge, 4 sparklines) + hash #/overview/day:TS; reload restore (after closest-bucket fix) ✓; replay scrub ←×3 → Enter → 10 Sept dossier + hash; CalendarSearch button path ✓; navigate-away → browser Back → dossier dialog restored from hash ✓; archive flow (generate → Archive → row → dialog → CSV blob 2276 bytes, tone column present); 8-screen hotkey regression ZERO console errors AND warnings; light mode + popover screenshot; final lint 0/0, tsc 0 app errors, dev.log all 200s.
+- VLM visual review attempted — service still 401 (missing X-Token; known environment limitation since round 5); DOM-geometry assertions used instead (sparkline paths/markers/dots/heights verified programmatically).
+- Screenshots: /tmp/qa16-dossier-v016.png (popover + sparklines), /tmp/qa16-nl-compare.png (compare dialog from NL query), /tmp/qa16-replay-dossier.png (replay-summoned dialog), /tmp/qa16-light-dossier.png + /tmp/qa16-light-overview.png (light mode), /tmp/qa16-final-dossier-dark.png.
+
+Stage Summary:
+- TraceX v0.16.0: the day dossier is now a first-class, deep-linkable intelligence artefact — every narrative row carries ±3-day trend context, the top-2 compare is one tap from any day, the temporal replay's ⏎ summons the decomposed day under the playhead, `#/overview/day:TS` links survive reloads (closest-bucket drift tolerance) and browser Back, the palette answers "compare gaganyaan vs neet" as a natural-language operator gesture, and archived briefing CSVs classify finding tone.
+- Files added: src/components/tracex/modals/DayDossierDialog.tsx.
+- Files changed: src/lib/mock/types.ts (context/contextIdx), src/lib/mock/series.ts (getDayDossier context window), src/lib/app-state.tsx (dossierDay + setComparePair + day: hash + go() clearing), Sparkline.tsx (markIdx), DayDossier.tsx (sparklines + A/B top 2 + copy link), TimeMachine.tsx (onInspect button + Enter), OverviewScreen.tsx (playhead→day mapping + onInspect), TraceXApp.tsx (dialog mount), CommandPalette.tsx (query feed + NL compare group + day-dossier group + placeholder), ArchivedReportDialog.tsx (tone column), HotkeyHelp.tsx (+2 entries), GuidedTour.tsx (copy), StatusBar.tsx (v0.16.0).
+- Remaining ideas for next round: cmdk Input onValueChange could also drive "goto <module>" / "filter X" natural-language intents; dossier sparkline could be clickable → per-topic sheet; compare dialog could accept 3+ narratives as a "heatmap" mode; day dossier could list the day's top bots (botProb cluster changes); VLM visual review still pending service availability (401 since round 5); consider anchoring mock NOW to midnight for perfectly stable timestamps (currently tolerated via closest-match).

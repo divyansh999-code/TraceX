@@ -101,7 +101,9 @@ const STEPS: TourStep[] = [
         Drag the playhead or hit <span className="font-mono text-foreground">▶</span> to rewind the corpus:
         the chart, KPIs, trending table and heat strip all re-derive <span className="text-foreground">as
         of</span> any point in the window, with the upcoming window ghosted ahead. Keys{" "}
-        <span className="font-mono text-foreground">←/→</span> seek while playing.
+        <span className="font-mono text-foreground">←/→</span> seek while playing and{" "}
+        <span className="font-mono text-foreground">⏎</span> summons the day dossier for the
+        playhead day.
       </p>
     ),
   },
@@ -121,9 +123,10 @@ const STEPS: TourStep[] = [
     body: (
       <>
         <p>
-          <span className="font-mono text-foreground">⌘K</span> opens the command palette (pin two narratives
-          for an A/B compare in Trends), <span className="font-mono text-foreground">?</span> lists every
-          shortcut, and generated briefings can be archived for later.
+          <span className="font-mono text-foreground">⌘K</span> opens the command palette — type{" "}
+          <span className="font-mono text-foreground">compare x vs y</span> to arm an A/B, or jump to
+          the latest spike&apos;s day dossier; <span className="font-mono text-foreground">?</span> lists
+          every shortcut, and generated briefings can be archived for later.
         </p>
         <p className="text-muted-foreground">Good hunting, analyst.</p>
       </>

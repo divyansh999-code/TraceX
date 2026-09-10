@@ -273,6 +273,10 @@ export interface DayNarrativeSlice {
   spike: boolean; // that narrative's own day bucketed as anomalous
   velocity: Topic["velocity"];
   risk: number;
+  /** 7-day volume context around the day (v0.16) — the sparkline data. */
+  context: number[];
+  /** Index of THIS day within `context` (v0.16) — the sparkline marker. */
+  contextIdx: number;
 }
 
 export interface DayClaimSlice {
