@@ -117,6 +117,15 @@ interface AppState {
   deleteView: (id: string) => void;
   isViewActive: (view: SavedView) => boolean;
 
+  /** Narrative A/B compare pins (v0.15, lifted from TrendsScreen local
+   *  state so the ⌘K palette can reach them) — max two, persisted. */
+  compareIds: string[];
+  toggleComparePin: (topicId: string) => "pinned" | "unpinned" | "full";
+  clearCompare: () => void;
+  /** The A/B compare dialog (global, like the report modal). */
+  compareOpen: boolean;
+  setCompareOpen: (open: boolean) => void;
+
   /** Analyst notebook — per-claim notes, persisted across sessions. */
   claimNotes: Record<string, ClaimNote>;
   setClaimNote: (claimId: string, text: string) => void;
@@ -164,6 +173,7 @@ interface PersistedSnapshot {
   savedViews?: SavedView[];
   claimNotes?: Record<string, ClaimNote>;
   reports?: ArchivedReport[];
+  compareIds?: string[];
 }
 
 const VALID_SCREENS = new Set<string>(SCREEN_IDS);
@@ -216,7 +226,10 @@ function loadPersisted(): PersistedSnapshot | null {
             r.findings.every((f) => f && typeof f.label === "string" && typeof f.value === "string")
         )
       : [];
-    return { filters, watchlist, savedViews, claimNotes, reports };
+    const compareIds = Array.isArray(data.compareIds)
+      ? data.compareIds.filter((c): c is string => typeof c === "string").slice(0, 2)
+      : [];
+    return { filters, watchlist, savedViews, claimNotes, reports, compareIds };
   } catch {
     return null;
   }
@@ -255,6 +268,7 @@ const INITIAL = (() => {
       savedViews: [] as SavedView[],
       claimNotes: {} as Record<string, ClaimNote>,
       reports: [] as ArchivedReport[],
+      compareIds: [] as string[],
       screen: "overview" as ScreenId,
       topicId: null as string | null,
       claimId: null as string | null,
@@ -268,6 +282,7 @@ const INITIAL = (() => {
     savedViews: persisted?.savedViews ?? [],
     claimNotes: persisted?.claimNotes ?? {},
     reports: persisted?.reports ?? [],
+    compareIds: persisted?.compareIds ?? [],
     screen: hash?.screen ?? "overview",
     topicId: (hash?.topicId ?? null) as string | null,
     claimId: (hash?.claimId ?? null) as string | null,
@@ -290,6 +305,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [savedViews, setSavedViews] = useState<SavedView[]>(INITIAL.savedViews);
   const [claimNotes, setClaimNotes] = useState<Record<string, ClaimNote>>(INITIAL.claimNotes);
   const [reports, setReports] = useState<ArchivedReport[]>(INITIAL.reports);
+  const [compareIds, setCompareIds] = useState<string[]>(INITIAL.compareIds);
+  const [compareOpen, setCompareOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -339,12 +356,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     firstHashWriteRef.current = false;
     try {
-      const snap: PersistedSnapshot = { filters, watchlist, savedViews, claimNotes, reports };
+      const snap: PersistedSnapshot = { filters, watchlist, savedViews, claimNotes, reports, compareIds };
       window.localStorage.setItem(STORE_KEY, JSON.stringify(snap));
     } catch {
       /* private mode / quota — persistence is best-effort */
     }
-  }, [screen, selectedTopicId, selectedClaimId, filters, watchlist, savedViews, claimNotes, reports]);
+  }, [screen, selectedTopicId, selectedClaimId, filters, watchlist, savedViews, claimNotes, reports, compareIds]);
 
   /* Browser Back/Forward + manual hash edits: restore console state from
    * the target hash. setState lives in the event handler (not an effect),
@@ -431,6 +448,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toggleWatchlist = useCallback((topicId: string) => {
     setWatchlist((w) => (w.includes(topicId) ? w.filter((t) => t !== topicId) : [...w, topicId]));
   }, []);
+
+  /* ---- narrative A/B compare pins (v0.15) ----
+     Result code lets callers surface the right toast; the functional
+     updater keeps state correct even if two pins land in one event task. */
+  const toggleComparePin = useCallback(
+    (topicId: string): "pinned" | "unpinned" | "full" => {
+      if (compareIds.includes(topicId)) {
+        setCompareIds(compareIds.filter((x) => x !== topicId));
+        return "unpinned";
+      }
+      if (compareIds.length >= 2) return "full";
+      setCompareIds((prev) => (prev.includes(topicId) || prev.length >= 2 ? prev : [...prev, topicId]));
+      return "pinned";
+    },
+    [compareIds]
+  );
+
+  const clearCompare = useCallback(() => setCompareIds([]), []);
 
   /* ---- saved views ---- */
   const saveView = useCallback(
@@ -551,6 +586,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       watchlist,
       toggleWatchlist,
       isWatched: (topicId: string) => watchlist.includes(topicId),
+      compareIds,
+      toggleComparePin,
+      clearCompare,
+      compareOpen,
+      setCompareOpen,
       savedViews,
       saveView,
       applyView,
@@ -583,6 +623,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       methodologyOpen,
       watchlist,
       toggleWatchlist,
+      compareIds,
+      toggleComparePin,
+      clearCompare,
+      compareOpen,
       savedViews,
       saveView,
       applyView,

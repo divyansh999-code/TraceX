@@ -262,6 +262,39 @@ export interface SamplePost {
   botProb: number;
 }
 
+/** Day-level corpus dossier (v0.15 spike inspector) — one calendar day
+ *  decomposed into volume, platform/sentiment mix, the narratives that
+ *  dominated it and the claims in play that day. */
+export interface DayNarrativeSlice {
+  id: string;
+  label: string;
+  dayVolume: number;
+  share: number; // 0..1 fraction of the day's total corpus
+  spike: boolean; // that narrative's own day bucketed as anomalous
+  velocity: Topic["velocity"];
+  risk: number;
+}
+
+export interface DayClaimSlice {
+  id: string;
+  text: string;
+  status: ClaimStatus;
+  risk: number;
+  why: string; // e.g. "first detected that day" | "active in #GaganyaanLaunch"
+}
+
+export interface DayDossier {
+  t: number;
+  label: string;
+  total: number;
+  baseline: number;
+  vsBaseline: number; // % delta vs the day's baseline
+  xShare: number; // 0..1
+  sentiment: { positive: number; neutral: number; negative: number }; // fractions
+  narratives: DayNarrativeSlice[];
+  claims: DayClaimSlice[];
+}
+
 export interface Influencer {
   nodeId: string;
   handle: string;

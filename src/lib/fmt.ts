@@ -52,6 +52,16 @@ export function fmtDateIST(t: number): string {
   });
 }
 
+/** Day-only IST label, e.g. "30 Aug" — for day-granular artefacts (heat
+ *  calendar native tooltips, day dossiers). */
+export function fmtDayIST(t: number): string {
+  return new Date(t).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
 /** Compact relative time, e.g. "22m", "3.4h", "2d" */
 export function relTime(t: number, now: number = Date.now()): string {
   const diff = Math.max(0, now - t);

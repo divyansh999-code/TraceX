@@ -1,0 +1,842 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * OVERVIEW — the Intelligence Fusion Dashboard.
+     5→ * Mission control: KPIs, volume × sentiment band, live alert feed,
+     6→ * trending narratives, network preview, module pipeline strip.
+     7→ */
+     8→import { useEffect, useMemo, useState } from "react";
+     9→import { useApp } from "@/lib/app-state";
+    10→import {
+    11→  getKpis,
+    12→  getVolumeSeries,
+    13→  effectiveTopics,
+    14→  getTopicSeries,
+    15→  getNetwork,
+    16→  getInfluencers,
+    17→  NOW,
+    18→} from "@/lib/mock";
+    19→import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned, fmtFull } from "@/lib/fmt";
+    20→import { cn } from "@/lib/utils";
+    21→import { Panel, Badge, Delta, ScoreBar, SeverityDot, LiveDot, Legend, Taxonomy } from "../common/primitives";
+    22→import { KpiCard } from "../common/KpiCard";
+    23→import { Sparkline } from "../common/Sparkline";
+    24→import { ScreenHeader } from "../common/ScreenHeader";
+    25→import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
+    26→import { useRefresh, useNow, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
+    27→import { HeatCalendar, type HeatDay } from "../common/HeatCalendar";
+    28→import { TimeMachine } from "../common/TimeMachine";
+    29→import {
+    30→  ResponsiveContainer,
+    31→  ComposedChart,
+    32→  Area,
+    33→  Line,
+    34→  XAxis,
+    35→  YAxis,
+    36→  CartesianGrid,
+    37→  Tooltip,
+    38→  ReferenceDot,
+    39→  ReferenceLine,
+    40→} from "recharts";
+    41→import {
+    42→  Database,
+    43→  GitBranch,
+    44→  HeartPulse,
+    45→  Radar,
+    46→  Bot,
+    47→  Share2,
+    48→  ShieldAlert,
+    49→  Layers,
+    50→  Flame,
+    51→  ArrowUpRight,
+    52→  Users,
+    53→  MessageSquare,
+    54→  Fingerprint,
+    55→  Cpu,
+    56→  History,
+    57→} from "lucide-react";
+    58→import { Button } from "@/components/ui/button";
+    59→import { toast } from "sonner";
+    60→import type { ScreenId } from "@/lib/mock/types";
+    61→
+    62→const WINDOW_LABEL: Record<string, string> = {
+    63→  "24h": "last 24 hours",
+    64→  "7d": "last 7 days",
+    65→  "30d": "last 30 days",
+    66→  custom: "custom window",
+    67→};
+    68→
+    69→/* ---------------- Live alert feed ---------------- */
+    70→
+    71→/** Consumes the shared live-alert bus (app-state): the shell-level feed
+    72→ *  singleton generates arrivals, fires the audio cue on every screen and
+    73→ *  publishes here — so this panel, the top-bar bell and the tab-title
+    74→ *  unread count all render ONE stream (no per-screen timers). Fresh rows
+    75→ *  animate in via their keyed `feed-arrival` class. */
+    76→function LiveAlertFeed() {
+    77→  const { go, alertsFeed } = useApp();
+    78→  const now = useNow(15_000);
+    79→
+    80→  return (
+    81→    <Panel
+    82→      title="Live alert feed"
+    83→      sub="auto-refresh"
+    84→      icon={Radar}
+    85→      className="min-h-0"
+    86→      bodyClassName="p-0"
+    87→      right={<LiveDot />}
+    88→    >
+    89→      <div className="max-h-[420px] overflow-y-auto divide-y divide-border/60">
+    90→        {alertsFeed.map((a) => (
+    91→          <button
+    92→            key={a.id}
+    93→            type="button"
+    94→            onClick={() => a.linkScreen && go(a.linkScreen)}
+    95→            title={`${a.id} — ${a.title}: ${a.detail}`}
+    96→            className="feed-arrival w-full text-left px-4 py-2.5 hover:bg-accent transition-colors cursor-pointer group"
+    97→          >
+    98→            <div className="flex items-center gap-2">
+    99→              <SeverityDot severity={a.severity} />
+   100→              <span className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+   101→                {a.title}
+   102→              </span>
+   103→              <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground/70 shrink-0">
+   104→                {relTime(a.t, now ? now.getTime() : NOW)}
+   105→              </span>
+   106→            </div>
+   107→            <div className="mt-1 flex items-center gap-2 pl-4">
+   108→              <Badge
+   109→                tone={
+   110→                  a.type === "spike"
+   111→                    ? "orange"
+   112→                    : a.type === "bot-cluster"
+   113→                      ? "red"
+   114→                      : a.type === "misinformation"
+   115→                        ? "amber"
+   116→                        : "cyan"
+   117→                }
+   118→                className="shrink-0"
+   119→              >
+   120→                {a.type}
+   121→              </Badge>
+   122→              <span className="text-[11px] text-muted-foreground truncate" title={a.detail}>
+   123→                {a.detail}
+   124→              </span>
+   125→            </div>
+   126→          </button>
+   127→        ))}
+   128→      </div>
+   129→    </Panel>
+   130→  );
+   131→}
+   132→
+   133→/* ---------------- Network preview (static mini graph) ---------------- */
+   134→
+   135→function NetworkPreview() {
+   136→  const { go } = useApp();
+   137→  const { filters } = useApp();
+   138→  const { nodes, edges, communities } = useMemo(() => getNetwork(filters), [filters]);
+   139→  const influencers = useMemo(() => getInfluencers(filters, 3), [filters]);
+   140→
+   141→  const W = 360;
+   142→  const H = 210;
+   143→  const layout = useMemo(() => {
+   144→    const top = [...nodes].sort((a, b) => b.pageRank - a.pageRank).slice(0, 16);
+   145→    const ids = new Set(top.map((n) => n.id));
+   146→    const subEdges = edges.filter((e) => ids.has(e.source) && ids.has(e.target)).slice(0, 26);
+   147→    // deterministic radial-ish layout
+   148→    const placed = top.map((n, i) => {
+   149→      const angle = (i / top.length) * Math.PI * 2 + (n.id.charCodeAt(4) % 10) * 0.06;
+   150→      const radius = n.pageRank > 0.06 ? 0.28 : n.pageRank > 0.04 ? 0.55 : 0.82;
+   151→      return {
+   152→        ...n,
+   153→        x: W / 2 + Math.cos(angle) * radius * (W / 2 - 18),
+   154→        y: H / 2 + Math.sin(angle) * radius * (H / 2 - 14),
+   155→      };
+   156→    });
+   157→    return { placed, subEdges };
+   158→  }, [nodes, edges]);
+   159→
+   160→  const byId = new Map(layout.placed.map((n) => [n.id, n]));
+   161→  const communityColor = (id: string) => communities.find((c) => c.id === id)?.color ?? "#5FA1C4";
+   162→
+   163→  return (
+   164→    <Panel
+   165→      title="Influence network"
+   166→      sub="preview"
+   167→      icon={Share2}
+   168→      right={
+   169→        <Button
+   170→          variant="outline"
+   171→          size="sm"
+   172→          className="h-6 px-2 text-[10px] gap-1"
+   173→          onClick={() => go("network")}
+   174→        >
+   175→          Open graph <ArrowUpRight className="size-3" />
+   176→        </Button>
+   177→      }
+   178→    >
+   179→      <button
+   180→        type="button"
+   181→        onClick={() => go("network")}
+   182→        className="w-full block cursor-pointer group"
+   183→        aria-label="Open full network analysis"
+   184→      >
+   185→        <svg viewBox={`0 0 ${W} ${H}`} className="w-full group-hover:opacity-90 transition-opacity">
+   186→          {layout.subEdges.map((e, i) => {
+   187→            const a = byId.get(e.source);
+   188→            const b = byId.get(e.target);
+   189→            if (!a || !b) return null;
+   190→            return (
+   191→              <line
+   192→                key={i}
+   193→                x1={a.x}
+   194→                y1={a.y}
+   195→                x2={b.x}
+   196→                y2={b.y}
+   197→                stroke="#232838"
+   198→                strokeWidth={Math.max(0.6, e.weight / 6)}
+   199→              />
+   200→            );
+   201→          })}
+   202→          {layout.placed.map((n) => {
+   203→            const r = 3 + Math.sqrt(n.pageRank) * 34;
+   204→            const bot = n.botProb > 0.6;
+   205→            return (
+   206→              <g key={n.id}>
+   207→                <circle
+   208→                  cx={n.x}
+   209→                  cy={n.y}
+   210→                  r={r}
+   211→                  fill={communityColor(n.communityId)}
+   212→                  fillOpacity={0.85}
+   213→                  stroke={bot ? CHART.red : "none"}
+   214→                  strokeWidth={bot ? 1.4 : 0}
+   215→                />
+   216→                {n.botProb > 0.6 && (
+   217→                  <circle cx={n.x} cy={n.y} r={r + 2.5} fill="none" stroke={CHART.red} strokeOpacity={0.35} />
+   218→                )}
+   219→              </g>
+   220→            );
+   221→          })}
+   222→        </svg>
+   223→      </button>
+   224→      <div className="mt-3 space-y-2">
+   225→        <Taxonomy>Top influencers</Taxonomy>
+   226→        {influencers.map((inf) => (
+   227→          <div key={inf.nodeId} className="flex items-center gap-2 text-xs">
+   228→            <span className="size-2 rounded-[2px] shrink-0" style={{ background: inf.communityColor }} />
+   229→            <span className="font-mono text-[11px] text-foreground truncate">{inf.handle}</span>
+   230→            <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground shrink-0">
+   231→              PR {inf.pageRank.toFixed(3)}
+   232→            </span>
+   233→            <span className="font-mono text-[10px] tnum text-muted-foreground shrink-0 w-12 text-right">
+   234→              {fmtCompact(inf.reach)}
+   235→            </span>
+   236→          </div>
+   237→        ))}
+   238→      </div>
+   239→    </Panel>
+   240→  );
+   241→}
+   242→
+   243→/* ---------------- Module pipeline strip ---------------- */
+   244→
+   245→const MODULES: { icon: typeof Database; name: string; metric: string; spark: number[]; screen: ScreenId }[] = [
+   246→  { icon: Database, name: "API Ingestion", metric: "12.4k/min", spark: [8, 9, 11, 10, 12, 13, 12, 14, 13, 15], screen: "overview" },
+   247→  { icon: Fingerprint, name: "Demographics", metric: "k≥50", spark: [5, 6, 5, 7, 6, 6, 7, 6, 7, 7], screen: "demographics" },
+   248→  { icon: HeartPulse, name: "Sentiment", metric: "7 langs", spark: [4, 5, 6, 5, 6, 7, 6, 7, 8, 7], screen: "sentiment" },
+   249→  { icon: Flame, name: "Trend Detection", metric: "z>2.5", spark: [3, 5, 4, 6, 8, 7, 9, 11, 10, 12], screen: "trends" },
+   250→  { icon: Bot, name: "Bot Detection", metric: "5k sample", spark: [2, 3, 2, 4, 3, 5, 4, 6, 5, 6], screen: "bots" },
+   251→  { icon: Share2, name: "Network Analysis", metric: "90 nodes", spark: [6, 6, 7, 7, 8, 8, 9, 8, 9, 10], screen: "network" },
+   252→  { icon: ShieldAlert, name: "Misinformation", metric: "10 claims", spark: [4, 5, 7, 6, 8, 9, 8, 10, 11, 12], screen: "misinfo" },
+   253→  { icon: Layers, name: "Intelligence Fusion", metric: "this view", spark: [7, 8, 8, 9, 10, 9, 10, 11, 12, 13], screen: "overview" },
+   254→];
+   255→
+   256→function ModuleStrip() {
+   257→  const { go } = useApp();
+   258→  return (
+   259→    <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
+   260→      {MODULES.map((m) => (
+   261→        <button
+   262→          key={m.name}
+   263→          type="button"
+   264→          onClick={() => go(m.screen)}
+   265→          title={`Open the ${m.screen} module — pipeline stage: ${m.name.toLowerCase()}`}
+   266→          className="group text-left bg-card border border-border rounded-lg p-3 hover:border-primary/50 hover:bg-accent/40 transition-colors cursor-pointer"
+   267→        >
+   268→          <div className="flex items-center gap-2">
+   269→            <m.icon className="size-3.5 text-muted-foreground group-hover:text-primary transition-colors" strokeWidth={1.75} />
+   270→            <span className="size-1.5 rounded-[2px] bg-signal-green pulse-dot" />
+   271→            <span className="ml-auto font-mono text-[9px] text-muted-foreground tnum">{m.metric}</span>
+   272→            <ArrowUpRight className="size-3 text-muted-foreground/0 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
+   273→          </div>
+   274→          <div className="mt-2 text-[11px] font-medium text-foreground leading-tight">{m.name}</div>
+   275→          <div className="mt-1.5">
+   276→            <Sparkline data={m.spark} color={CHART.cyan} width={120} height={18} area={false} />
+   277→          </div>
+   278→        </button>
+   279→      ))}
+   280→    </div>
+   281→  );
+   282→}
+   283→
+   284→/* ---------------- Main screen ---------------- */
+   285→
+   286→export function OverviewScreen() {
+   287→  const { filters, go, setRange, alertsFeed } = useApp();
+   288→  const ready = useRefresh("overview");
+   289→
+   290→  const kpis = useMemo(() => getKpis(filters), [filters]);
+   291→  const series = useMemo(() => getVolumeSeries(filters), [filters]);
+   292→  /* 30-day corpus heat strip — always 30d context regardless of active range */
+   293→  const heatDays = useMemo<HeatDay[]>(
+   294→    () => getVolumeSeries({ ...filters, range: "30d" }).map((p) => ({ t: p.t, total: p.total, spike: p.spike, label: p.label })),
+   295→    [filters]
+   296→  );
+   297→  const onHeatDay = (day: HeatDay) => {
+   298→    setRange("30d");
+   299→    go("trends");
+   300→    toast(`Corpus view: ${day.label}`, {
+   301→      description: `${fmtFull(day.total)} posts on that day — 30-day window loaded in Trend Explorer.`,
+   302→    });
+   303→  };
+   304→  const topics = useMemo(
+   305→    () =>
+   306→      effectiveTopics(filters)
+   307→        .map((t) => ({ ...t, spark: getTopicSeries(t.topic, filters).map((p) => p.total) }))
+   308→        .sort((a, b) => b.topic.change24h - a.topic.change24h)
+   309→        .slice(0, 7),
+   310→    [filters]
+   311→  );
+   312→  const chartTheme = useChartTheme();
+   313→
+   314→  /* ---- temporal replay (v0.13 time machine) ----
+   315→     cursorIdx = null → live full window; otherwise the playhead index.
+   316→     Playback = a self-rescheduling timeout (recreated per tick because
+   317→     cursorIdx is a dependency, so the closure always sees fresh state);
+   318→     ALL setState happens inside the async tick callback — lint-clean. */
+   319→  const [cursorIdx, setCursorIdx] = useState<number | null>(null);
+   320→  const [playing, setPlaying] = useState(false);
+   321→  const [speed, setSpeed] = useState(1);
+   322→
+   323→  const stepMs = Math.max(120, Math.round(14_000 / Math.max(2, series.length) / speed));
+   324→  useEffect(() => {
+   325→    if (!playing || series.length < 2) return;
+   326→    const cur = cursorIdx ?? series.length - 1;
+   327→    const id = setTimeout(() => {
+   328→      if (cur >= series.length - 1) {
+   329→        /* swept to the live edge — hand back to the live window */
+   330→        setPlaying(false);
+   331→        setCursorIdx(null);
+   332→        return;
+   333→      }
+   334→      setCursorIdx(cur + 1);
+   335→    }, stepMs);
+   336→    return () => clearTimeout(id);
+   337→  }, [playing, cursorIdx, series.length, stepMs]);
+   338→
+   339→  /* keyboard seek keeps playing: TimeMachine calls onCursor directly
+   340→     (no onPlaying(false)) — the timer picks up from the new position */
+   341→  const onSeekKeepPlay = (i: number | null) => setCursorIdx(i);
+   342→
+   343→  const isLive = cursorIdx == null;
+   344→  const effCursor = Math.min(cursorIdx ?? series.length - 1, series.length - 1);
+   345→  /* every artefact below renders from `view` — the as-of slice */
+   346→  const view = useMemo(
+   347→    () => (isLive ? series : series.slice(0, effCursor + 1)),
+   348→    [series, isLive, effCursor]
+   349→  );
+   350→  const viewEnd = view[view.length - 1];
+   351→
+   352→  const totalVol = useMemo(() => series.reduce((a, p) => a + p.total, 0) || 1, [series]);
+   353→  const viewVol = useMemo(() => view.reduce((a, p) => a + p.total, 0), [view]);
+   354→  /* as-of KPI derivations — real arithmetic over the sliced corpus */
+   355→  const postsAsOf = Math.round(kpis.postsTracked * (viewVol / totalVol));
+   356→  const sentimentAsOf = useMemo(() => {
+   357→    const pos = view.reduce((a, p) => a + p.positive, 0);
+   358→    const neg = view.reduce((a, p) => a + p.negative, 0);
+   359→    const tot = view.reduce((a, p) => a + p.total, 0) || 1;
+   360→    return (pos - neg) / tot;
+   361→  }, [view]);
+   362→  const narrativesAsOf = useMemo(
+   363→    () =>
+   364→      topics.filter((t) => {
+   365→        const prefix = t.spark.slice(0, effCursor + 1);
+   366→        const full = t.spark.reduce((a, b) => a + b, 0) || 1;
+   367→        return prefix.reduce((a, b) => a + b, 0) / full >= 0.12;
+   368→      }).length,
+   369→    [topics, effCursor]
+   370→  );
+   371→  const highRiskAsOf = useMemo(() => {
+   372→    if (isLive) return kpis.highRiskAlerts;
+   373→    const edge = viewEnd?.t ?? 0;
+   374→    return alertsFeed.filter(
+   375→      (a) => a.t <= edge && a.status === "New" && (a.severity === "critical" || a.severity === "high")
+   376→    ).length;
+   377→  }, [alertsFeed, isLive, viewEnd, kpis.highRiskAlerts]);
+   378→
+   379→  /* chart payload: stacked sentiment up to the playhead, ghost of the
+   380→     still-upcoming window after it (null-padded so recharts breaks both) */
+   381→  const chartData = useMemo(
+   382→    () =>
+   383→      series.map((p, i) =>
+   384→        i <= effCursor
+   385→          ? { ...p, ghost: null as number | null }
+   386→          : { ...p, positive: null, neutral: null, negative: null, baseline: null, ghost: p.total }
+   387→      ),
+   388→    [series, effCursor]
+   389→  );
+   390→
+   391→  /* trending rows during replay: only narratives that have actually
+   392→     emerged by the playhead, ranked by their as-of growth rate, with
+   393→     volume and spark truncated to the arrived prefix */
+   394→  const trendingAsOf = useMemo(() => {
+   395→    if (isLive) return topics.map((t) => ({ ...t, share: 1, asOfChange: t.topic.change24h, spark: t.spark }));
+   396→    const rows = topics
+   397→      .map((t) => {
+   398→        const prefix = t.spark.slice(0, effCursor + 1);
+   399→        const full = t.spark.reduce((a, b) => a + b, 0) || 1;
+   400→        const share = prefix.reduce((a, b) => a + b, 0) / full;
+   401→        const n = prefix.length;
+   402→        const last3 = prefix.slice(-3).reduce((a, b) => a + b, 0) / Math.max(1, Math.min(3, n));
+   403→        const prev3 = prefix.slice(Math.max(0, n - 6), Math.max(0, n - 3));
+   404→        const prevAvg = prev3.length ? prev3.reduce((a, b) => a + b, 0) / prev3.length : last3;
+   405→        const asOfChange = prevAvg > 0 ? ((last3 - prevAvg) / prevAvg) * 100 : t.topic.change24h;
+   406→        return { ...t, spark: prefix, share, asOfChange };
+   407→      })
+   408→      .filter((t) => t.share >= 0.12)
+   409→      .sort((a, b) => b.asOfChange - a.asOfChange);
+   410→    return rows.slice(0, 7);
+   411→  }, [topics, isLive, effCursor]);
+   412→
+   413→  if (!ready) {
+   414→    return (
+   415→      <div className="space-y-4 animate-in fade-in duration-200">
+   416→        <KpiRowSkeleton />
+   417→        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   418→          <PanelSkeleton className="xl:col-span-8" height="h-72" />
+   419→          <PanelSkeleton className="xl:col-span-4" height="h-72" />
+   420→        </div>
+   421→        <PanelSkeleton height="h-48" />
+   422→      </div>
+   423→    );
+   424→  }
+   425→
+   426→  const windowLabel = WINDOW_LABEL[filters.range] ?? "window";
+   427→  const sentimentToneOfKpi = sentimentTone(kpis.avgSentiment);
+   428→  const sentimentToneAsOf = sentimentTone(sentimentAsOf);
+   429→  const replayLabel = viewEnd?.label ?? "—";
+   430→
+   431→  return (
+   432→    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+   433→      <ScreenHeader
+   434→        kicker="MODULE 01 // INTELLIGENCE FUSION"
+   435→        title="Mission Control"
+   436→        description={`Unified signal picture across X and Telegram for the ${windowLabel} — volume, narratives, influence, bot activity and misinformation risk in a single operating view.`}
+   437→        right={
+   438→          <div className="flex items-center gap-2 flex-wrap">
+   439→            <Badge tone="cyan" dot>
+   440→              {filters.platform === "all" ? "X + Telegram" : filters.platform === "x" ? "X only" : "Telegram only"}
+   441→            </Badge>
+   442→            <Badge tone={sentimentToneOfKpi} dot>
+   443→              net {fmtNet(kpis.avgSentiment)}
+   444→            </Badge>
+   445→            {!isLive && (
+   446→              <Badge tone="orange" dot>
+   447→                <History className="size-2.5" /> replay · as of {replayLabel}
+   448→              </Badge>
+   449→            )}
+   450→            <Button
+   451→              variant="outline"
+   452→              size="sm"
+   453→              className="h-7 text-[11px] gap-1.5"
+   454→              onClick={() => {
+   455→                toast("Fusion snapshot queued", {
+   456→                  description: "Intelligence summary attached to the daily briefing (mock).",
+   457→                });
+   458→              }}
+   459→            >
+   460→              <Layers className="size-3.5" /> Snapshot
+   461→            </Button>
+   462→          </div>
+   463→        }
+   464→      />
+   465→
+   466→      {/* KPI row */}
+   467→      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" data-tour="kpi-row">
+   468→        <KpiCard
+   469→          label="Posts tracked"
+   470→          value={fmtCompact(postsAsOf)}
+   471→          icon={MessageSquare}
+   472→          tone="cyan"
+   473→          delta={12.4}
+   474→          spark={view.map((p) => p.total)}
+   475→          sparkColor={CHART.cyan}
+   476→          footnote={
+   477→            isLive ? (
+   478→              <>
+   479→                <span className="text-signal-cyan">X {Math.round(kpis.xShare * 100)}%</span>
+   480→                <span className="text-border">/</span>
+   481→                <span className="text-signal-green">TG {Math.round(kpis.telegramShare * 100)}%</span>
+   482→              </>
+   483→            ) : (
+   484→              <span className="text-signal-orange">as of {replayLabel}</span>
+   485→            )
+   486→          }
+   487→        />
+   488→        <KpiCard
+   489→          label="Active narratives"
+   490→          value={String(narrativesAsOf)}
+   491→          icon={GitBranch}
+   492→          tone="orange"
+   493→          delta={8.1}
+   494→          spark={view.map((p) => Math.max(1, Math.round(p.total / 900)))}
+   495→          sparkColor={CHART.orange}
+   496→          footnote={<span>{isLive ? "3 emerging · 2 coordinated" : `${Math.round((viewVol / totalVol) * 100)}% of window volume`}</span>}
+   497→        />
+   498→        <KpiCard
+   499→          label="Avg sentiment"
+   500→          value={fmtNet(sentimentAsOf)}
+   501→          icon={HeartPulse}
+   502→          tone={sentimentToneAsOf === "green" ? "green" : sentimentToneAsOf === "red" ? "red" : "amber"}
+   503→          delta={Number((kpis.sentimentDelta * 100).toFixed(1))}
+   504→          deltaSuffix=""
+   505→          spark={view.map((p) => (p.positive - p.negative) / Math.max(1, p.total))}
+   506→          sparkColor={sentimentToneAsOf === "red" ? CHART.red : CHART.green}
+   507→          footnote={<span>{isLive ? "scale −1.00 … +1.00" : `as of ${replayLabel}`}</span>}
+   508→        />
+   509→        <KpiCard
+   510→          label="High-risk alerts"
+   511→          value={String(highRiskAsOf)}
+   512→          icon={ShieldAlert}
+   513→          tone="red"
+   514→          invertDelta
+   515→          delta={25}
+   516→          spark={view.map((p) => (p.spike ? 5 : 2))}
+   517→          sparkColor={CHART.red}
+   518→          footnote={<span className="text-signal-red">{isLive ? "2 critical · 2 high" : `timeline to ${replayLabel}`}</span>}
+   519→        />
+   520→      </div>
+   521→
+   522→      {/* 30-day corpus intensity strip */}
+   523→      <Panel
+   524→        title="Corpus intensity"
+   525→        icon={Cpu}
+   526→        sub={isLive ? "30-day daily volume · reflects filter bank" : `30-day volume · playhead ${replayLabel}`}
+   527→        right={
+   528→          <span className="font-mono text-[10px] text-muted-foreground/70 hidden sm:inline">
+   529→            click a day → trend explorer
+   530→          </span>
+   531→        }
+   532→      >
+   533→        <HeatCalendar days={heatDays} onSelect={onHeatDay} activeT={isLive ? undefined : (viewEnd?.t ?? undefined)} />
+   534→      </Panel>
+   535→
+   536→      {/* Volume × sentiment band + live alerts */}
+   537→      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   538→        <Panel
+   539→          className="xl:col-span-8"
+   540→          title="Conversation volume · sentiment composition"
+   541→          icon={Flame}
+   542→          sub={isLive ? windowLabel : `temporal replay · as of ${replayLabel}`}
+   543→          right={
+   544→            <Legend
+   545→              items={[
+   546→                { label: "Positive", color: CHART.green },
+   547→                { label: "Neutral", color: "#64748B" },
+   548→                { label: "Negative", color: CHART.red },
+   549→                { label: "Baseline", color: CHART.cyan, dashed: true },
+   550→                { label: "Spike", color: CHART.amber },
+   551→                ...(isLive ? [] : [{ label: "Upcoming", color: "#64748B", dashed: true }]),
+   552→              ]}
+   553→            />
+   554→          }
+   555→        >
+   556→          <div className="h-64 md:h-72 -mx-1">
+   557→            <ResponsiveContainer width="100%" height="100%">
+   558→              <ComposedChart data={chartData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+   559→                <defs>
+   560→                  <linearGradient id="ovPos" x1="0" y1="0" x2="0" y2="1">
+   561→                    <stop offset="0%" stopColor={CHART.green} stopOpacity={0.55} />
+   562→                    <stop offset="100%" stopColor={CHART.green} stopOpacity={0.28} />
+   563→                  </linearGradient>
+   564→                  <linearGradient id="ovNeu" x1="0" y1="0" x2="0" y2="1">
+   565→                    <stop offset="0%" stopColor="#64748B" stopOpacity={0.4} />
+   566→                    <stop offset="100%" stopColor="#64748B" stopOpacity={0.22} />
+   567→                  </linearGradient>
+   568→                  <linearGradient id="ovNeg" x1="0" y1="0" x2="0" y2="1">
+   569→                    <stop offset="0%" stopColor={CHART.red} stopOpacity={0.6} />
+   570→                    <stop offset="100%" stopColor={CHART.red} stopOpacity={0.34} />
+   571→                  </linearGradient>
+   572→                </defs>
+   573→                <CartesianGrid stroke={chartTheme.grid} strokeDasharray={GRID.strokeDasharray} vertical={GRID.vertical} />
+   574→                <XAxis
+   575→                  dataKey="t"
+   576→                  type="number"
+   577→                  domain={["dataMin", "dataMax"]}
+   578→                  tickFormatter={(t: number) => {
+   579→                    const p = series.find((s) => s.t === t);
+   580→                    return p?.label ?? "";
+   581→                  }}
+   582→                  minTickGap={filters.range === "30d" ? 24 : filters.range === "7d" ? 36 : 48}
+   583→                  tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   584→                  axisLine={{ stroke: chartTheme.grid }}
+   585→                  tickLine={false}
+   586→                />
+   587→                <YAxis
+   588→                  tickFormatter={(v: number) => fmtCompact(v)}
+   589→                  width={44}
+   590→                  tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   591→                  axisLine={false}
+   592→                  tickLine={false}
+   593→                />
+   594→                <Tooltip
+   595→                  cursor={{ stroke: chartTheme.crosshair, strokeDasharray: "4 4" }}
+   596→                  content={(props) => (
+   597→                    <ChartTooltip
+   598→                      {...props}
+   599→                      label={
+   600→                        (() => {
+   601→                          const p = series.find((s) => s.t === (props as { payload?: { t?: number } }).payload?.t);
+   602→                          return p?.label ?? "";
+   603→                        })()
+   604→                      }
+   605→                      labelExtra={
+   606→                        (props as { payload?: { spike?: boolean } }).payload?.spike ? (
+   607→                          <Badge tone="amber">spike</Badge>
+   608→                        ) : null
+   609→                      }
+   610→                    />
+   611→                  )}
+   612→                />
+   613→                <Area
+   614→                  dataKey="positive"
+   615→                  name="Positive"
+   616→                  stackId="s"
+   617→                  stroke={CHART.green}
+   618→                  strokeWidth={0}
+   619→                  fill="url(#ovPos)"
+   620→                />
+   621→                <Area
+   622→                  dataKey="neutral"
+   623→                  name="Neutral"
+   624→                  stackId="s"
+   625→                  stroke="#64748B"
+   626→                  strokeWidth={0}
+   627→                  fill="url(#ovNeu)"
+   628→                />
+   629→                <Area
+   630→                  dataKey="negative"
+   631→                  name="Negative"
+   632→                  stackId="s"
+   633→                  stroke={CHART.red}
+   634→                  strokeWidth={0}
+   635→                  fill="url(#ovNeg)"
+   636→                />
+   637→                {/* historical baseline — dashed cyan reference (promised by the legend) */}
+   638→                <Line
+   639→                  type="monotone"
+   640→                  dataKey="baseline"
+   641→                  name="Baseline"
+   642→                  stroke={CHART.cyan}
+   643→                  strokeOpacity={0.7}
+   644→                  strokeWidth={1}
+   645→                  strokeDasharray="3 4"
+   646→                  dot={false}
+   647→                  connectNulls={false}
+   648→                />
+   649→                {/* still-upcoming window behind the replay playhead — dimmed ghost */}
+   650→                {!isLive && (
+   651→                  <Line
+   652→                    type="monotone"
+   653→                    dataKey="ghost"
+   654→                    name="Upcoming"
+   655→                    stroke={"#64748B"}
+   656→                    strokeOpacity={0.55}
+   657→                    strokeWidth={1}
+   658→                    strokeDasharray="2 6"
+   659→                    dot={false}
+   660→                    connectNulls={false}
+   661→                  />
+   662→                )}
+   663→                {/* replay playhead — vertical hairline at the as-of edge */}
+   664→                {!isLive && viewEnd && (
+   665→                  <ReferenceLine
+   666→                    x={viewEnd.t}
+   667→                    stroke={CHART.orange}
+   668→                    strokeOpacity={0.55}
+   669→                    strokeWidth={1}
+   670→                  />
+   671→                )}
+   672→                {view
+   673→                  .filter((p) => p.spike)
+   674→                  .map((p) => (
+   675→                    <ReferenceDot
+   676→                      key={p.t}
+   677→                      x={p.t}
+   678→                      y={p.total}
+   679→                      r={4}
+   680→                      fill={CHART.amber}
+   681→                      stroke="#0A0E14"
+   682→                      strokeWidth={1}
+   683→                    />
+   684→                  ))}
+   685→              </ComposedChart>
+   686→            </ResponsiveContainer>
+   687→          </div>
+   688→          <div className="mt-3 border-t border-border/60 pt-3" data-tour="time-machine">
+   689→            <div className="flex items-center gap-2 flex-wrap">
+   690→              <Taxonomy>Temporal replay</Taxonomy>
+   691→              <span className="font-mono text-[9px] text-muted-foreground/60 hidden md:inline">
+   692→                ←/→ seek · End → live
+   693→              </span>
+   694→            </div>
+   695→            <div className="mt-2">
+   696→              <TimeMachine
+   697→                points={series}
+   698→                cursor={cursorIdx}
+   699→                onCursor={onSeekKeepPlay}
+   700→                playing={playing}
+   701→                onPlaying={setPlaying}
+   702→                speed={speed}
+   703→                onSpeed={setSpeed}
+   704→              />
+   705→            </div>
+   706→          </div>
+   707→          <div className="mt-3 grid grid-cols-3 gap-3 border-t border-border/60 pt-3">
+   708→            <div>
+   709→              <Taxonomy>Peak {isLive ? "hour" : "to date"}</Taxonomy>
+   710→              <div className="font-mono text-sm tnum text-foreground mt-0.5">
+   711→                {(() => {
+   712→                  const peak = view.reduce((a, b) => (b.total > a.total ? b : a), view[0]);
+   713→                  return peak ? `${peak.label} · ${fmtCompact(peak.total)}` : "—";
+   714→                })()}
+   715→              </div>
+   716→            </div>
+   717→            <div>
+   718→              <Taxonomy>Negative share</Taxonomy>
+   719→              <div className="font-mono text-sm tnum text-signal-red mt-0.5">
+   720→                {(() => {
+   721→                  const tot = view.reduce((a, p) => a + p.total, 0) || 1;
+   722→                  const neg = view.reduce((a, p) => a + p.negative, 0);
+   723→                  return `${((neg / tot) * 100).toFixed(1)}%`;
+   724→                })()}
+   725→              </div>
+   726→            </div>
+   727→            <div>
+   728→              <Taxonomy>Spikes flagged</Taxonomy>
+   729→              <div
+   730→                className={cn(
+   731→                  "font-mono text-sm tnum mt-0.5",
+   732→                  view.filter((p) => p.spike).length > 0 ? "text-signal-amber" : "text-muted-foreground"
+   733→                )}
+   734→              >
+   735→                {view.filter((p) => p.spike).length > 0
+   736→                  ? `${view.filter((p) => p.spike).length} vs baseline`
+   737→                  : "none · nominal"}
+   738→              </div>
+   739→            </div>
+   740→          </div>
+   741→        </Panel>
+   742→
+   743→        <div className="xl:col-span-4 min-w-0" data-tour="live-feed">
+   744→          <LiveAlertFeed />
+   745→        </div>
+   746→      </div>
+   747→
+   748→      {/* Trending narratives + network preview */}
+   749→      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   750→        <Panel
+   751→          className="xl:col-span-7"
+   752→          title="Top trending narratives"
+   753→          icon={Flame}
+   754→          sub={isLive ? `24h Δ · ${windowLabel}` : `emerged by ${replayLabel} · temporal replay`}
+   755→          bodyClassName="p-0"
+   756→          right={
+   757→            <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => go("trends")}>
+   758→              Trend explorer <ArrowUpRight className="size-3" />
+   759→            </Button>
+   760→          }
+   761→        >
+   762→          <div className="overflow-x-auto">
+   763→            <table className="w-full text-left">
+   764→              <thead>
+   765→                <tr className="border-b border-border">
+   766→                  {["Narrative", "Volume", "24h Δ", "Sentiment", "Risk", "Trend"].map((h) => (
+   767→                    <th key={h} className="taxonomy text-muted-foreground/70 font-semibold px-4 py-2 whitespace-nowrap">
+   768→                      {h}
+   769→                    </th>
+   770→                  ))}
+   771→                </tr>
+   772→              </thead>
+   773→              <tbody>
+   774→                {trendingAsOf.map(({ topic, spark, share, asOfChange }) => {
+   775→                  const dom =
+   776→                    topic.sentiment.positive > topic.sentiment.negative
+   777→                      ? topic.sentiment.positive > topic.sentiment.neutral
+   778→                        ? "positive"
+   779→                        : "neutral"
+   780→                      : topic.sentiment.negative > topic.sentiment.neutral
+   781→                        ? "negative"
+   782→                        : "neutral";
+   783→                  return (
+   784→                    <tr
+   785→                      key={topic.id}
+   786→                      onClick={() => go("trends", { topicId: topic.id })}
+   787→                      className="border-b border-border/50 last:border-0 hover:bg-accent cursor-pointer transition-colors"
+   788→                    >
+   789→                      <td className="px-4 py-2.5">
+   790→                        <div className="flex items-center gap-2 min-w-0">
+   791→                          {topic.velocity === "surging" && <Flame className="size-3 text-signal-orange shrink-0" />}
+   792→                          <span className="text-xs font-medium text-foreground truncate max-w-40">{topic.label}</span>
+   793→                          {topic.emerging && <Badge tone="orange">emerging</Badge>}
+   794→                        </div>
+   795→                        <div className="text-[10px] text-muted-foreground truncate max-w-44 mt-0.5">{topic.gloss}</div>
+   796→                      </td>
+   797→                      <td className="px-4 py-2.5 font-mono text-xs tnum text-foreground whitespace-nowrap">
+   798→                        {fmtCompact(topic.baseVolume * 1.75 * (isLive ? 1 : Math.max(0.02, share)))}
+   799→                      </td>
+   800→                      <td className="px-4 py-2.5 whitespace-nowrap">
+   801→                        <Delta value={Number(asOfChange.toFixed(1))} />
+   802→                      </td>
+   803→                      <td className="px-4 py-2.5">
+   804→                        <Badge tone={dom === "positive" ? "green" : dom === "negative" ? "red" : "slate"}>
+   805→                          {dom}
+   806→                        </Badge>
+   807→                      </td>
+   808→                      <td className="px-4 py-2.5 w-28">
+   809→                        <ScoreBar value={topic.risk} showValue />
+   810→                      </td>
+   811→                      <td className="px-4 py-2.5">
+   812→                        <Sparkline data={spark} color={CHART.orange} width={72} height={22} />
+   813→                      </td>
+   814→                    </tr>
+   815→                  );
+   816→                })}
+   817→              </tbody>
+   818→            </table>
+   819→          </div>
+   820→        </Panel>
+   821→
+   822→        <div className="xl:col-span-5 min-w-0">
+   823→          <NetworkPreview />
+   824→        </div>
+   825→      </div>
+   826→
+   827→      {/* Module pipeline */}
+   828→      <Panel title="Capability pipeline" icon={Cpu} sub="all modules nominal">
+   829→        <ModuleStrip />
+   830→      </Panel>
+   831→
+   832→      <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
+   833→        <Users className="size-3" />
+   834→        Source: aggregated public posts (X, Telegram) · anonymised cohorts · window {windowLabel} ·
+   835→        generated {relTime(NOW)} ago · prototype data
+   836→      </div>
+   837→    </div>
+   838→  );
+   839→}
+   840→
+   841→export { fmtSigned };
+   842→

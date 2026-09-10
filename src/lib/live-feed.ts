@@ -9,17 +9,23 @@
  *      for the bell badge, the tab-title unread count and the Overview feed).
  *
  * Duplicate `startLiveFeed()` calls are safe — the first call owns the timer.
+ * pause/resume (v0.15): the guided tour suspends the feed while it is
+ * demonstrating the temporal-replay step, so no live arrivals confuse the
+ * rewind narrative; the singleton remembers it was started and resumes.
  */
 
 import type { IntelligenceAlert } from "./mock/types";
 import { dispatchAlertCue } from "./alert-cue";
 
 const EVENT = "tracex:live-alert";
+const TICK_MS = 22_000;
 
 type Listener = (alert: IntelligenceAlert) => void;
 const listeners = new Set<Listener>();
 
 let timer: ReturnType<typeof setInterval> | null = null;
+let started = false;
+let paused = false;
 let seq = 0;
 
 const TEMPLATES: Omit<IntelligenceAlert, "id" | "t">[] = [
@@ -67,24 +73,32 @@ const TEMPLATES: Omit<IntelligenceAlert, "id" | "t">[] = [
 
 /** Start the singleton feed timer (idempotent). Returns a stop function. */
 export function startLiveFeed(): () => void {
-  if (timer) return () => stopLiveFeed();
-  /* 22s cadence — deliberate SOC-ish pacing for a demo: visible, not noisy */
-  timer = setInterval(() => {
-    seq += 1;
-    const t = TEMPLATES[(seq - 1) % TEMPLATES.length];
-    const alert: IntelligenceAlert = {
-      ...t,
-      id: `ALR-L${9000 + seq}`,
-      t: Date.now(),
-    };
-    /* audio cue fires from the singleton — every screen, not just Overview */
-    dispatchAlertCue(alert.severity);
-    for (const l of listeners) l(alert);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(EVENT, { detail: alert }));
-    }
-  }, 22_000);
+  if (started) return () => stopLiveFeed();
+  started = true;
+  paused = false;
+  spin();
   return () => stopLiveFeed();
+}
+
+/* 22s cadence — deliberate SOC-ish pacing for a demo: visible, not noisy */
+function spin(): void {
+  timer = setInterval(tick, TICK_MS);
+}
+
+function tick(): void {
+  seq += 1;
+  const t = TEMPLATES[(seq - 1) % TEMPLATES.length];
+  const alert: IntelligenceAlert = {
+    ...t,
+    id: `ALR-L${9000 + seq}`,
+    t: Date.now(),
+  };
+  /* audio cue fires from the singleton — every screen, not just Overview */
+  dispatchAlertCue(alert.severity);
+  for (const l of listeners) l(alert);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(EVENT, { detail: alert }));
+  }
 }
 
 function stopLiveFeed(): void {
@@ -92,6 +106,25 @@ function stopLiveFeed(): void {
     clearInterval(timer);
     timer = null;
   }
+  started = false;
+  paused = false;
+}
+
+/** Suspend arrivals without tearing the singleton down (v0.15). */
+export function pauseLiveFeed(): void {
+  if (!started || paused) return;
+  paused = true;
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+}
+
+/** Resume a paused feed; no-op when running or never started. */
+export function resumeLiveFeed(): void {
+  if (!started || !paused) return;
+  paused = false;
+  spin();
 }
 
 /** Subscribe to arrivals. Returns an unsubscribe function. */

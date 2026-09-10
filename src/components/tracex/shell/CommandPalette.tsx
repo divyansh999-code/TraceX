@@ -43,6 +43,7 @@ import {
   Bookmark,
   Footprints,
   FlaskConical,
+  GitCompareArrows,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ScreenId } from "@/lib/mock/types";
@@ -58,6 +59,10 @@ const MODULES: { id: ScreenId; code: string; label: string; icon: typeof LayoutD
   { id: "misinfo", code: "07", label: "Misinformation Radar", icon: Radar },
   { id: "alerts", code: "08", label: "Alerts & Reports", icon: BellRing },
 ];
+
+/* bare ids + glosses keep romanized search working for the compare entry */
+const compareLabel = (id: string) => TOPICS.find((t) => t.id === id)?.label ?? id;
+const compareGloss = (id: string) => TOPICS.find((t) => t.id === id)?.gloss ?? "";
 
 const PLATFORM_META = {
   all: { label: "Filter: all platforms", icon: Globe },
@@ -96,6 +101,8 @@ export function CommandPalette() {
     savedViews,
     applyView,
     isViewActive,
+    compareIds,
+    setCompareOpen,
   } = useApp();
   const { resolvedTheme, setTheme } = useTheme();
 
@@ -192,6 +199,30 @@ export function CommandPalette() {
           </CommandGroup>
 
           <CommandSeparator />
+
+          {/* A/B compare (v0.15): appears once two narratives are pinned —
+              pins are global state, so this works from any screen */}
+          {compareIds.length === 2 && (
+            <>
+              <CommandGroup heading="Narrative A/B — pinned pair">
+                <CommandItem
+                  value={`compare ab versus ${compareIds.join(" ")} ${compareLabel(compareIds[0])} ${compareLabel(compareIds[1])} ${compareGloss(compareIds[0])} ${compareGloss(compareIds[1])} pins`}
+                  onSelect={() => {
+                    go("trends");
+                    setCompareOpen(true);
+                    setOpen(false);
+                  }}
+                >
+                  <GitCompareArrows className="size-3.5 text-primary" />
+                  <span className="truncate max-w-64">
+                    Compare {compareLabel(compareIds[0])} vs {compareLabel(compareIds[1])}
+                  </span>
+                  <CommandShortcut className="font-mono text-[10px]">A/B</CommandShortcut>
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+            </>
+          )}
 
           <CommandGroup heading="Claims — misinformation radar">
             {claims.slice(0, 8).map((c) => (

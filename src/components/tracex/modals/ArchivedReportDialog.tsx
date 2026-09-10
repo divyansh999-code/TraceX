@@ -7,6 +7,7 @@
  */
 import type { ArchivedReport } from "@/lib/app-state";
 import { fmtCompact, fmtDateIST, fmtNet, relTime } from "@/lib/fmt";
+import { downloadCsv, csvStamp } from "@/lib/csv";
 import { Badge, ScoreBar, Taxonomy } from "../common/primitives";
 import {
   Dialog,
@@ -17,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Bot, HeartPulse, ShieldAlert, TrendingUp, Trash2, Copy } from "lucide-react";
+import { Bot, HeartPulse, ShieldAlert, TrendingUp, Trash2, Copy, FileDown } from "lucide-react";
 import { toast } from "sonner";
 
 const ICONS = {
@@ -56,6 +57,42 @@ export function ArchivedReportDialog({
     } catch {
       toast.error("Clipboard unavailable", { description: "Browser denied clipboard access." });
     }
+  };
+
+  /* findings-level CSV export (v0.15): one row per archived finding, with
+     the snapshot KPIs repeated on every row for spreadsheet pivoting */
+  const exportCsv = () => {
+    if (!r) return;
+    downloadCsv(
+      `tracex-briefing-${r.docId.replace(/[^A-Z0-9-]/gi, "")}-${csvStamp()}.csv`,
+      [
+        "doc_id",
+        "archived_at",
+        "window",
+        "platform",
+        "posts_tracked",
+        "net_sentiment",
+        "bot_share_pct",
+        "finding_no",
+        "finding_label",
+        "finding_value",
+      ],
+      r.findings.map((f, i) => [
+        r.docId,
+        fmtDateIST(r.createdAt),
+        r.windowLabel,
+        r.platformLabel,
+        r.postsTracked,
+        r.netSentiment.toFixed(3),
+        (r.botShare * 100).toFixed(1),
+        i + 1,
+        f.label,
+        f.value,
+      ])
+    );
+    toast.success("Briefing CSV exported", {
+      description: `${r.findings.length} findings · DOC ${r.docId}`,
+    });
   };
 
   return (
@@ -167,6 +204,9 @@ export function ArchivedReportDialog({
               </Button>
               <Button variant="outline" onClick={copySummary}>
                 <Copy className="size-3.5" /> Copy
+              </Button>
+              <Button variant="outline" onClick={exportCsv}>
+                <FileDown className="size-3.5" /> CSV
               </Button>
               <Button
                 variant="outline"

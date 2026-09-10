@@ -3,15 +3,22 @@
 /**
  * 30-day corpus intensity calendar — GitHub-style density strip in the
  * console telemetry language. Cell opacity = daily volume vs the window max;
- * spike days carry a red ring. Clicking a day (or focusing it and pressing
- * Enter) pivots the console to the 30-day trend window.
+ * spike days carry a red ring.
  *
- * Keyboard: ←/→ walk days, Home/End jump to window edges, Enter/Space select.
- * Roving tabindex — exactly one cell sits in the page tab order.
+ * Two click behaviours (v0.15):
+ *  - `renderDayDossier` provided → clicking a day opens the day-dossier
+ *    popover anchored to that cell (spike inspector);
+ *  - otherwise → `onSelect` (pivot the console to the 30-day trend window).
+ *
+ * Keyboard: ←/→ walk days, Home/End jump to window edges, Enter/Space select
+ * (Enter opens the dossier when the inspector is armed). Roving tabindex —
+ * exactly one cell sits in the page tab order. Cells also carry a native
+ * title tooltip so compact sheet strips stay readable.
  */
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { fmtFull, fmtDateIST } from "@/lib/fmt";
+import { fmtFull, fmtDayIST } from "@/lib/fmt";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 
 export interface HeatDay {
   t: number;
@@ -25,6 +32,7 @@ export function HeatCalendar({
   onSelect,
   compact = false,
   activeT,
+  renderDayDossier,
 }: {
   days: HeatDay[];
   onSelect?: (day: HeatDay) => void;
@@ -33,8 +41,18 @@ export function HeatCalendar({
   /** Temporal replay (v0.13): days after this epoch are still-to-come —
    *  rendered dimmed so the strip tracks the time-machine playhead. */
   activeT?: number;
+  /** Spike inspector (v0.15): when provided, clicking a day opens this
+   *  dossier popover anchored to the clicked cell instead of onSelect. */
+  renderDayDossier?: (day: HeatDay) => ReactNode;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  /* inspector state — index + anchor ELEMENT of the day whose dossier popover
+     is open. The element comes from the click event into STATE (never read
+     from a ref during render — lint-clean); the ref-like wrapper handed to
+     Radix is built inline only when an element exists, matching its
+     non-null virtualRef contract. */
+  const [inspectIdx, setInspectIdx] = useState<number | null>(null);
+  const [inspectEl, setInspectEl] = useState<HTMLElement | null>(null);
   /* roving tabindex cursor — starts on the most recent day; the visible
      cursor ring only appears once the strip is keyboard-touched, so an
      untouched calendar doesn't look like it has a rendering artifact */
@@ -51,6 +69,12 @@ export function HeatCalendar({
   };
 
   const hoverDay = hover != null ? days[hover] : null;
+  const inspectDay = inspectIdx != null ? days[inspectIdx] : null;
+  /* clicks on other heat cells re-target the popover instead of dismissing */
+  const keepPopoverOnCell = (e: { preventDefault: () => void; target: EventTarget | null }) => {
+    const el = e.target as HTMLElement | null;
+    if (el?.closest("[data-heat-cell]")) e.preventDefault();
+  };
 
   const onCellKey = (e: React.KeyboardEvent, i: number) => {
     let next: number | null = null;
@@ -66,8 +90,37 @@ export function HeatCalendar({
     cellRefs.current[next]?.focus();
   };
 
+  const onCellClick = (d: HeatDay, i: number, el: HTMLElement | null) => {
+    if (renderDayDossier) {
+      setInspectIdx(i);
+      setInspectEl(el);
+      setHover(i);
+    } else {
+      onSelect?.(d);
+    }
+  };
+
   return (
     <div className="space-y-2.5">
+      {/* one popover for the whole strip — virtually anchored to the clicked cell */}
+      <Popover
+        open={inspectDay != null && !!renderDayDossier}
+        onOpenChange={(o) => {
+          if (!o) setInspectIdx(null);
+        }}
+      >
+        <PopoverAnchor virtualRef={inspectEl ? { current: inspectEl } : undefined} />
+        <PopoverContent
+          align="center"
+          sideOffset={8}
+          collisionPadding={12}
+          className="w-auto max-w-96 p-0 rounded-md"
+          onInteractOutside={keepPopoverOnCell}
+          onFocusOutside={keepPopoverOnCell}
+        >
+          {inspectDay && renderDayDossier?.(inspectDay)}
+        </PopoverContent>
+      </Popover>
       <div className="flex items-center gap-2">
         <div className={cn("flex min-w-0", compact ? "gap-[3px] flex-wrap" : "flex-wrap gap-[3px]")}>
           {days.map((d, i) => (
@@ -77,7 +130,8 @@ export function HeatCalendar({
                 cellRefs.current[i] = el;
               }}
               type="button"
-              onClick={() => onSelect?.(d)}
+              data-heat-cell=""
+              onClick={(e) => onCellClick(d, i, e.currentTarget)}
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
               onFocus={() => setHover(i)}
@@ -85,6 +139,7 @@ export function HeatCalendar({
               onKeyDown={(e) => onCellKey(e, i)}
               tabIndex={i === cursor ? 0 : -1}
               aria-label={`${d.label} — ${fmtFull(d.total)} posts${d.spike ? ", anomalous spike" : ""}`}
+              title={`${fmtDayIST(d.t)} · ${fmtFull(d.total)} posts${d.spike ? " · SPIKE" : ""}${renderDayDossier ? " — click for day dossier" : ""}`}
               className={cn(
                 "relative rounded-[3px] cursor-pointer transition-transform",
                 compact ? "size-2.5" : "size-3.5",
@@ -135,7 +190,7 @@ export function HeatCalendar({
         <span className="shrink-0">{days[0]?.label ?? "−30d"}</span>
         {hoverDay ? (
           <span className="text-foreground normal-case min-w-0 truncate">
-            <span className="text-muted-foreground">{fmtDateIST(hoverDay.t)} ·</span>{" "}
+            <span className="text-muted-foreground">{fmtDayIST(hoverDay.t)} ·</span>{" "}
             {fmtFull(hoverDay.total)} posts
             {hoverDay.spike && <span className="text-signal-red"> · SPIKE</span>}
           </span>
@@ -145,7 +200,7 @@ export function HeatCalendar({
           </span>
         )}
         <span className={cn("ml-auto shrink-0", compact ? "hidden" : "hidden sm:inline")} aria-hidden="true">
-          ←/→ walk days
+          {renderDayDossier ? "←/→ walk · click = dossier" : "←/→ walk days"}
         </span>
         <span className="shrink-0">{days[days.length - 1]?.label ?? "today"}</span>
       </div>

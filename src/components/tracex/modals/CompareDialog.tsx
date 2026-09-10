@@ -31,7 +31,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { GitCompareArrows, TrendingUp, ArrowUpRight } from "lucide-react";
+import { GitCompareArrows, TrendingUp, ArrowUpRight, Award } from "lucide-react";
 
 const VELOCITY_TONE: Record<Topic["velocity"], "green" | "orange" | "slate" | "red"> = {
   surging: "orange",
@@ -125,6 +125,38 @@ export function CompareDialog({
     return { data, volA, volB };
   }, [topics, filters]);
 
+  /* ---- verdict (v0.15): auto-computed winner sentence from the lead cells ---- */
+  const verdict = useMemo(() => {
+    if (!topics || !seriesPair) return null;
+    const [a, b] = topics;
+    const netA = a.sentiment.positive - a.sentiment.negative;
+    const netB = b.sentiment.positive - b.sentiment.negative;
+    const metrics: { a: number; b: number; invert?: boolean }[] = [
+      { a: seriesPair.volA, b: seriesPair.volB },
+      { a: a.change24h, b: b.change24h },
+      { a: netA, b: netB },
+      { a: a.xShare, b: b.xShare },
+      { a: VELOCITY_RANK[a.velocity], b: VELOCITY_RANK[b.velocity] },
+      { a: a.risk, b: b.risk, invert: true },
+    ];
+    const wins = metrics.map((m) => {
+      if (m.a === m.b) return null;
+      const hi = m.invert ? Math.min(m.a, m.b) : Math.max(m.a, m.b);
+      return hi === m.a ? "a" : "b";
+    });
+    const winsA = wins.filter((w) => w === "a").length;
+    const winsB = wins.filter((w) => w === "b").length;
+    const riskGap = Math.abs(a.risk - b.risk);
+    return {
+      winsA,
+      winsB,
+      riskGap,
+      riskier: a.risk > b.risk ? a : b,
+      winnerLabel: winsA === winsB ? null : winsA > winsB ? a.label : b.label,
+      winnerIsA: winsA > winsB,
+    };
+  }, [topics, seriesPair]);
+
   const [a, b] = topics ?? [null, null];
 
   return (
@@ -146,6 +178,47 @@ export function CompareDialog({
           </div>
         ) : (
           <div className="max-h-[70vh] overflow-y-auto p-4 space-y-4">
+            {/* auto-computed verdict banner (v0.15) */}
+            {verdict && (
+              <div className="flex items-start gap-3 border border-primary/25 bg-primary/5 rounded-md px-3.5 py-2.5">
+                <Award className="size-4 text-primary shrink-0 mt-0.5" strokeWidth={1.75} />
+                <p className="text-xs leading-relaxed text-foreground/90 min-w-0">
+                  <span className="taxonomy text-primary mr-1.5">Verdict</span>
+                  {verdict.winsA === verdict.winsB ? (
+                    <>
+                      split decision — <span className="text-signal-orange font-medium">A</span> and{" "}
+                      <span className="text-signal-cyan font-medium">B</span> each take {verdict.winsA} of 6
+                      headline metrics
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        className={cn(
+                          "font-medium",
+                          verdict.winnerIsA ? "text-signal-orange" : "text-signal-cyan"
+                        )}
+                      >
+                        {verdict.winnerLabel}
+                      </span>{" "}
+                      leads{" "}
+                      <span className="font-semibold text-foreground">
+                        {verdict.winsA === 6 || verdict.winsB === 6
+                          ? "all 6 headline metrics"
+                          : `${Math.max(verdict.winsA, verdict.winsB)} of 6 headline metrics (${Math.min(verdict.winsA, verdict.winsB)} to the other)`}
+                      </span>
+                    </>
+                  )}
+                  {verdict.riskGap >= 0.12 && (
+                    <>
+                      {" · "}
+                      <span className="text-signal-amber">caution: {verdict.riskier.label} carries materially higher risk</span>
+                    </>
+                  )}
+                  <span className="text-muted-foreground/70"> — auto-derived from the lead cells below</span>
+                </p>
+              </div>
+            )}
+
             {/* identity strip */}
             <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center bg-popover border border-border rounded-md p-3">
               <div className="min-w-0">

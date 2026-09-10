@@ -9,6 +9,9 @@ import type {
   TopicSentimentRow,
   SentimentShiftEvent,
   Claim,
+  DayDossier,
+  DayNarrativeSlice,
+  DayClaimSlice,
   Topic as TopicT,
 } from "./types";
 
@@ -410,6 +413,77 @@ export function getClaims(filters: Filters): Claim[] {
       (TOPICS.find((t) => t.id === c.topicId)?.label ?? "").toLowerCase().includes(q)
     );
   });
+}
+
+/** Day-level corpus dossier (v0.15 spike inspector): decompose one calendar
+ *  day of the 30-day window into volume vs baseline, platform & sentiment
+ *  mix, the narratives that dominated it, and the claims in play.
+ *
+ *  Index alignment: the 30-day series and every per-topic 30-day series are
+ *  generated from the same end/step grid, so bucket i always means the same
+ *  day across series. */
+export function getDayDossier(t: number, filters: Filters): DayDossier | null {
+  const f30: Filters = { ...filters, range: "30d" };
+  const series = getVolumeSeries(f30);
+  const idx = series.findIndex((p) => p.t === t);
+  if (idx < 0) return null;
+  const point = series[idx];
+
+  const narratives: DayNarrativeSlice[] = effectiveTopics(filters)
+    .map(({ topic }) => {
+      const ts = getTopicSeries(topic, f30);
+      const p = ts[idx];
+      return {
+        id: topic.id,
+        label: topic.label,
+        dayVolume: p?.total ?? 0,
+        share: point.total > 0 ? (p?.total ?? 0) / point.total : 0,
+        spike: p?.spike ?? false,
+        velocity: topic.velocity,
+        risk: topic.risk,
+      };
+    })
+    .sort((x, y) => y.dayVolume - x.dayVolume)
+    .slice(0, 4);
+
+  const topIds = new Set(narratives.map((n) => n.id));
+  const labelOf = (id: string) => narratives.find((n) => n.id === id)?.label ?? TOPICS.find((tp) => tp.id === id)?.label ?? "a top narrative";
+  const dayEnd = t + 86_400_000;
+  const firstSeenThatDay = CLAIMS.filter((c) => c.firstSeen >= t && c.firstSeen < dayEnd);
+  const topical = CLAIMS.filter((c) => topIds.has(c.topicId) && !firstSeenThatDay.includes(c));
+  const claims: DayClaimSlice[] = [
+    ...firstSeenThatDay.slice(0, 2).map((c) => ({
+      id: c.id,
+      text: c.text,
+      status: c.status,
+      risk: c.risk,
+      why: "first detected that day",
+    })),
+    ...topical.slice(0, 3).map((c) => ({
+      id: c.id,
+      text: c.text,
+      status: c.status,
+      risk: c.risk,
+      why: `active in ${labelOf(c.topicId)}`,
+    })),
+  ].slice(0, 3);
+
+  const total = Math.max(1, point.total);
+  return {
+    t,
+    label: point.label,
+    total: point.total,
+    baseline: point.baseline,
+    vsBaseline: point.baseline > 0 ? ((point.total - point.baseline) / point.baseline) * 100 : 0,
+    xShare: point.x / total,
+    sentiment: {
+      positive: point.positive / total,
+      neutral: point.neutral / total,
+      negative: point.negative / total,
+    },
+    narratives,
+    claims,
+  };
 }
 
 export { NOW };

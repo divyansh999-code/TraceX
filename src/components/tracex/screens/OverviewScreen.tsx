@@ -25,6 +25,7 @@ import { ScreenHeader } from "../common/ScreenHeader";
 import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
 import { useRefresh, useNow, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
 import { HeatCalendar, type HeatDay } from "../common/HeatCalendar";
+import { DayDossier } from "../common/DayDossier";
 import { TimeMachine } from "../common/TimeMachine";
 import {
   ResponsiveContainer,
@@ -526,11 +527,15 @@ export function OverviewScreen() {
         sub={isLive ? "30-day daily volume · reflects filter bank" : `30-day volume · playhead ${replayLabel}`}
         right={
           <span className="font-mono text-[10px] text-muted-foreground/70 hidden sm:inline">
-            click a day → trend explorer
+            click a day → dossier
           </span>
         }
       >
-        <HeatCalendar days={heatDays} onSelect={onHeatDay} activeT={isLive ? undefined : (viewEnd?.t ?? undefined)} />
+        <HeatCalendar
+          days={heatDays}
+          activeT={isLive ? undefined : (viewEnd?.t ?? undefined)}
+          renderDayDossier={(day) => <DayDossier day={day} filters={filters} onOpenTrends={onHeatDay} />}
+        />
       </Panel>
 
       {/* Volume × sentiment band + live alerts */}

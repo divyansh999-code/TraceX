@@ -9,6 +9,7 @@ import {
   getClaims,
   effectiveTopics,
   getTopicSeries,
+  getDayDossier,
 } from "./series";
 import { getNetwork, getInfluencers, getPropagation, getBots } from "./network";
 
@@ -22,6 +23,7 @@ export {
   getClaims,
   effectiveTopics,
   getTopicSeries,
+  getDayDossier,
   getNetwork,
   getInfluencers,
   getPropagation,

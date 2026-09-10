@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "@/lib/app-state";
+import { pauseLiveFeed, resumeLiveFeed } from "@/lib/live-feed";
 import { Button } from "@/components/ui/button";
 import { TraceXMark } from "../common/TraceXLogo";
 import { cn } from "@/lib/utils";
@@ -139,6 +140,10 @@ interface Rect {
 
 const PAD = 8;
 
+/* index of the temporal-replay spotlight step — the tour suspends the live
+   alert feed while demonstrating it (v0.15), so no arrivals land mid-rewind */
+const TM_STEP = STEPS.findIndex((s) => s.target === '[data-tour="time-machine"]');
+
 export function GuidedTour() {
   const { screen, go } = useApp();
   const [step, setStep] = useState<number | null>(null);
@@ -149,6 +154,17 @@ export function GuidedTour() {
   const skipRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const current = step != null ? STEPS[step] : null;
+
+  /* ---- feed pause during the time-machine step (v0.15): stepping onto
+     the replay spotlight suspends live arrivals (they'd confuse the
+     rewind); leaving it — or ending the tour — resumes the singleton.
+     No-op when the tour never started (step === null → resume is inert). */
+  useEffect(() => {
+    if (step === TM_STEP) pauseLiveFeed();
+    else resumeLiveFeed();
+  }, [step]);
+  /* unmount safety — never leave the feed suspended behind us */
+  useEffect(() => () => resumeLiveFeed(), []);
 
   const finish = useCallback(
     (markSeen = true) => {

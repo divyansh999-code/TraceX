@@ -402,11 +402,25 @@ function BriefingArchive() {
                 className="min-w-0 flex-1 text-left cursor-pointer"
                 title={`Open briefing DOC ${r.docId}`}
               >
-                <div className="text-xs text-foreground truncate group-hover:text-primary transition-colors">
-                  {r.docId} · {r.windowLabel}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs text-foreground truncate group-hover:text-primary transition-colors">
+                    {r.docId}
+                  </span>
+                  <span
+                    className="shrink-0 rounded-sm border border-border bg-muted/40 px-1 py-px font-mono text-[9px] text-muted-foreground"
+                    title="Window at archive time"
+                  >
+                    {r.windowLabel}
+                  </span>
+                  <span
+                    className="shrink-0 rounded-sm border border-border bg-muted/40 px-1 py-px font-mono text-[9px] text-muted-foreground"
+                    title="Platform scope at archive time"
+                  >
+                    {r.platformLabel}
+                  </span>
                 </div>
                 <div className="font-mono text-[10px] tnum text-muted-foreground/70 truncate">
-                  {fmtDateIST(r.createdAt)} · {r.findings.length} findings · {r.platformLabel}
+                  {fmtDateIST(r.createdAt)} · {r.findings.length} findings
                 </div>
               </button>
               <Button

@@ -377,27 +377,31 @@ function TopicDrill({
 /* ---------------- Main screen ---------------- */
 
 export function TrendsScreen() {
-  const { filters, go, selectedTopicId, setSelectedTopicId, resetFilters, watchlist, toggleWatchlist } = useApp();
+  const {
+    filters,
+    go,
+    selectedTopicId,
+    setSelectedTopicId,
+    resetFilters,
+    watchlist,
+    toggleWatchlist,
+    /* A/B compare pins (v0.15 global state — palette-reachable, persisted) */
+    compareIds,
+    toggleComparePin,
+    clearCompare,
+    compareOpen,
+    setCompareOpen,
+  } = useApp();
   const ready = useRefresh("trends");
   const chartTheme = useChartTheme();
   const [kw, setKw] = useState("");
   /* local sheet state — opens on mount when arriving with a topic, then via selectTopic */
   const [sheetOpen, setSheetOpen] = useState(() => selectedTopicId != null);
-  /* A/B compare picks (v0.14) — max two, then the dialog opens */
-  const [compareIds, setCompareIds] = useState<string[]>([]);
-  const [compareOpen, setCompareOpen] = useState(false);
-  const toggleCompare = (id: string) => {
-    if (compareIds.includes(id)) {
-      setCompareIds(compareIds.filter((x) => x !== id));
-      return;
-    }
-    if (compareIds.length >= 2) {
+  const onComparePin = (id: string) => {
+    const result = toggleComparePin(id);
+    if (result === "full") {
       toast("A/B holds two narratives", { description: "Unpin one of the pinned rows first." });
-      return;
     }
-    /* functional updater guard: stays correct even if two pins land in the
-       same event task (stale closure) — the second append can't clobber */
-    setCompareIds((prev) => (prev.includes(id) || prev.length >= 2 ? prev : [...prev, id]));
   };
   const compareTopics = useMemo(() => {
     const [ida, idb] = compareIds;
@@ -789,7 +793,7 @@ export function TrendsScreen() {
                 {compareIds.length}/2 pinned
                 <button
                   type="button"
-                  onClick={() => setCompareIds([])}
+                  onClick={clearCompare}
                   className="ml-0.5 text-muted-foreground hover:text-signal-red cursor-pointer"
                   aria-label="Clear compare pins"
                   title="Clear compare pins"
@@ -882,7 +886,7 @@ export function TrendsScreen() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => toggleCompare(topic.id)}
+                            onClick={() => onComparePin(topic.id)}
                             className={cn(
                               "size-5 rounded-sm flex items-center justify-center transition-colors cursor-pointer",
                               compareIds.includes(topic.id)
