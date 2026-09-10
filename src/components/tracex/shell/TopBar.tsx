@@ -11,7 +11,7 @@ import { LiveDot, Chip } from "../common/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Search, Moon, SunMedium, RotateCw, Send, CalendarClock, X as XIcon, Volume2, VolumeX } from "lucide-react";
+import { Search, Moon, SunMedium, RotateCw, Send, CalendarClock, X as XIcon, Volume2, VolumeX, Bookmark, BookmarkPlus } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { isAudioEnabled, setAudioEnabled, playCriticalCue } from "@/lib/alert-cue";
@@ -76,12 +76,29 @@ function Segmented<T extends string>({
 }
 
 export function TopBar() {
-  const { filters, setPlatform, setRange, setCustomDays, toggleLanguage, clearLanguages, setQuery, screen } = useApp();
+  const {
+    filters,
+    setPlatform,
+    setRange,
+    setCustomDays,
+    toggleLanguage,
+    clearLanguages,
+    setQuery,
+    screen,
+    savedViews,
+    saveView,
+    applyView,
+    deleteView,
+    isViewActive,
+  } = useApp();
   const { resolvedTheme, setTheme } = useTheme();
   const now = useNow(1000);
   const [searchText, setSearchText] = useState(filters.query);
   const [customOpen, setCustomOpen] = useState(false);
   const [customValue, setCustomValue] = useState(String(filters.customDays));
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const [rememberScreen, setRememberScreen] = useState(true);
   /* audio cue toggle — lazy client-side init (TopBar mounts post-boot-splash,
      so the initializer never runs during SSR) */
   const [audioOn, setAudioOn] = useState(() => (typeof window !== "undefined" && isAudioEnabled()));
@@ -251,8 +268,107 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Language chips + active filters row */}
+      {/* Saved views + language chips row */}
       <div className="h-9 flex items-center gap-2 px-4 border-t border-border/60 overflow-x-auto">
+        {/* Saved filter-bank presets (v0.12) */}
+        {savedViews.length > 0 && (
+          <>
+            <span className="taxonomy text-primary/70 shrink-0 hidden sm:inline">Views</span>
+            {savedViews.map((v) => (
+              <span key={v.id} className="relative group/view shrink-0">
+                <button
+                  type="button"
+                  onClick={() => applyView(v.id)}
+                  title={`Apply view “${v.name}” — ${v.filters.platform.toUpperCase()} · ${v.filters.range}${v.filters.languages.length ? ` · ${v.filters.languages.length} langs` : ""}${v.screen ? ` · ${v.screen} module` : ""}`}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 h-5.5 px-2 rounded-sm text-[10px] font-mono cursor-pointer transition-colors whitespace-nowrap",
+                    isViewActive(v)
+                      ? "bg-primary/15 text-primary border border-primary/40"
+                      : "text-muted-foreground border border-border hover:text-foreground hover:border-muted-foreground/40"
+                  )}
+                >
+                  <Bookmark className="size-2.5" />
+                  {v.name}
+                  {v.screen && <span className="text-muted-foreground/60">· {v.screen}</span>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteView(v.id);
+                    toast(`View “${v.name}” removed`);
+                  }}
+                  aria-label={`Delete view ${v.name}`}
+                  title={`Delete view “${v.name}”`}
+                  className="absolute -top-1 -right-1 size-3 rounded-[3px] bg-signal-red/90 text-white hidden group-hover/view:flex items-center justify-center cursor-pointer"
+                >
+                  <XIcon className="size-2" />
+                </button>
+              </span>
+            ))}
+            <span className="w-px h-3.5 bg-border shrink-0 hidden sm:block" />
+          </>
+        )}
+
+        {/* Save current filter bank as a named view */}
+        <Popover open={saveViewOpen} onOpenChange={setSaveViewOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              title="Save the current filter bank as a named view"
+              aria-label="Save current view"
+              className="inline-flex items-center gap-1 h-5.5 px-2 rounded-sm text-[10px] font-mono text-muted-foreground border border-dashed border-border hover:text-primary hover:border-primary/50 transition-colors cursor-pointer shrink-0"
+            >
+              <BookmarkPlus className="size-2.5" /> Save view
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 p-3">
+            <div className="taxonomy text-muted-foreground mb-2">Save current filter bank</div>
+            <div className="text-[10px] font-mono text-muted-foreground/80 mb-2 leading-relaxed">
+              {filters.platform.toUpperCase()} · {filters.range === "custom" ? `${filters.customDays}D` : filters.range.toUpperCase()}
+              {filters.languages.length ? ` · ${filters.languages.length} lang${filters.languages.length === 1 ? "" : "s"}` : ""}
+              {filters.query ? ` · “${filters.query.slice(0, 14)}…”` : ""} · module {screen}
+            </div>
+            <Input
+              value={viewName}
+              onChange={(e) => setViewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  saveView(viewName, rememberScreen ? screen : undefined);
+                  setViewName("");
+                  setSaveViewOpen(false);
+                  toast("View saved", { description: "Reachable from the view rail and ⌘K." });
+                }
+              }}
+              placeholder="e.g. High-risk watch · 30d"
+              maxLength={40}
+              className="h-8 text-xs"
+            />
+            <div className="flex items-center justify-between mt-2">
+              <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberScreen}
+                  onChange={(e) => setRememberScreen(e.target.checked)}
+                  className="accent-primary size-3"
+                />
+                remember module
+              </label>
+              <Button
+                size="sm"
+                className="h-7 text-[11px]"
+                onClick={() => {
+                  saveView(viewName, rememberScreen ? screen : undefined);
+                  setViewName("");
+                  setSaveViewOpen(false);
+                  toast("View saved", { description: "Reachable from the view rail and ⌘K." });
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+
         <span className="taxonomy text-muted-foreground/60 shrink-0 hidden sm:inline">Languages</span>
         {LANGUAGES.map((lang) => (
           <Chip

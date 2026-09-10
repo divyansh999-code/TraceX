@@ -16,6 +16,13 @@
  *   state from the hash instead of leaving the app).
  * - `reportOpen` — the intelligence report modal is now global state, so the
  *   ⌘K palette (and any screen) can open it directly.
+ *
+ * v0.12 additions:
+ * - Saved views: named filter-bank presets, persisted + palette-reachable.
+ * - Analyst annotations: per-claim notebook entries, persisted.
+ * - Live alert bus: a shell-level feed singleton pushes fresh alerts here,
+ *   so the bell badge, the document title and the Overview feed share one
+ *   source and the critical-audio cue fires on every screen.
  */
 import {
   createContext,
@@ -28,7 +35,22 @@ import {
   type ReactNode,
 } from "react";
 
-import type { Filters, Platform, RangeKey, ScreenId } from "./mock/types";
+import type { Filters, IntelligenceAlert, Platform, RangeKey, ScreenId } from "./mock/types";
+import { getAlerts } from "./mock";
+import { subscribeLiveAlerts, startLiveFeed } from "./live-feed";
+
+interface SavedView {
+  id: string;
+  name: string;
+  filters: Filters;
+  screen?: ScreenId;
+  savedAt: number;
+}
+
+interface ClaimNote {
+  text: string;
+  updatedAt: number;
+}
 
 interface AppState {
   filters: Filters;
@@ -55,6 +77,23 @@ interface AppState {
   watchlist: string[];
   toggleWatchlist: (topicId: string) => void;
   isWatched: (topicId: string) => boolean;
+
+  /** Saved filter-bank presets — persisted across sessions. */
+  savedViews: SavedView[];
+  saveView: (name: string, screen?: ScreenId) => string;
+  applyView: (id: string) => void;
+  deleteView: (id: string) => void;
+  isViewActive: (view: SavedView) => boolean;
+
+  /** Analyst notebook — per-claim notes, persisted across sessions. */
+  claimNotes: Record<string, ClaimNote>;
+  setClaimNote: (claimId: string, text: string) => void;
+
+  /** Live alert bus — merged base + arriving alerts, shared by the bell,
+   *  the Overview feed and the document-title unread count. */
+  alertsFeed: IntelligenceAlert[];
+  alertUnread: number;
+  markAlertsRead: (ids: string[]) => void;
 
   /** Bumped whenever filters change — screens use it as skeleton key. */
   refreshKey: number;
@@ -90,7 +129,11 @@ const STORE_KEY = "tracex.console.v1";
 interface PersistedSnapshot {
   filters: Filters;
   watchlist: string[];
+  savedViews?: SavedView[];
+  claimNotes?: Record<string, ClaimNote>;
 }
+
+const VALID_SCREENS = new Set<string>(SCREEN_IDS);
 
 function loadPersisted(): PersistedSnapshot | null {
   if (typeof window === "undefined") return null;
@@ -108,7 +151,28 @@ function loadPersisted(): PersistedSnapshot | null {
     const watchlist = Array.isArray(data.watchlist)
       ? data.watchlist.filter((w): w is string => typeof w === "string")
       : DEFAULT_WATCHLIST;
-    return { filters, watchlist };
+    const savedViews = Array.isArray(data.savedViews)
+      ? data.savedViews.filter(
+          (v): v is SavedView =>
+            !!v &&
+            typeof v.id === "string" &&
+            typeof v.name === "string" &&
+            !!v.filters &&
+            typeof v.filters === "object"
+        )
+      : [];
+    const claimNotes: Record<string, ClaimNote> = {};
+    if (data.claimNotes && typeof data.claimNotes === "object") {
+      for (const [k, v] of Object.entries(data.claimNotes)) {
+        if (typeof k === "string" && v && typeof (v as ClaimNote).text === "string") {
+          claimNotes[k] = {
+            text: (v as ClaimNote).text.slice(0, 2_000),
+            updatedAt: Number.isFinite((v as ClaimNote).updatedAt) ? (v as ClaimNote).updatedAt : Date.now(),
+          };
+        }
+      }
+    }
+    return { filters, watchlist, savedViews, claimNotes };
   } catch {
     return null;
   }
@@ -144,6 +208,8 @@ const INITIAL = (() => {
     return {
       filters: DEFAULT_FILTERS,
       watchlist: DEFAULT_WATCHLIST,
+      savedViews: [] as SavedView[],
+      claimNotes: {} as Record<string, ClaimNote>,
       screen: "overview" as ScreenId,
       topicId: null as string | null,
       claimId: null as string | null,
@@ -154,11 +220,20 @@ const INITIAL = (() => {
   return {
     filters: persisted?.filters ?? DEFAULT_FILTERS,
     watchlist: persisted?.watchlist ?? DEFAULT_WATCHLIST,
+    savedViews: persisted?.savedViews ?? [],
+    claimNotes: persisted?.claimNotes ?? {},
     screen: hash?.screen ?? "overview",
     topicId: (hash?.topicId ?? null) as string | null,
     claimId: (hash?.claimId ?? null) as string | null,
   };
 })();
+
+/** Alerts that warrant an unread badge — critical/high and still New. */
+function isHotAlert(a: IntelligenceAlert): boolean {
+  return a.status === "New" && (a.severity === "critical" || a.severity === "high");
+}
+
+const FEED_MAX = 10;
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [filters, setFilters] = useState<Filters>(INITIAL.filters);
@@ -166,10 +241,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(INITIAL.topicId);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(INITIAL.claimId);
   const [watchlist, setWatchlist] = useState<string[]>(INITIAL.watchlist);
+  const [savedViews, setSavedViews] = useState<SavedView[]>(INITIAL.savedViews);
+  const [claimNotes, setClaimNotes] = useState<Record<string, ClaimNote>>(INITIAL.claimNotes);
   const [reportOpen, setReportOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  /* live alert bus (v0.12): arriving alerts live here so the bell, the
+     Overview feed and the tab-title unread count all share one source. */
+  const [liveAlerts, setLiveAlerts] = useState<IntelligenceAlert[]>([]);
+  const [alertReadIds, setAlertReadIds] = useState<Set<string>>(() => new Set());
 
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  /* ---- live feed singleton: starts once at the shell level; every
+     arrival (a) fires the critical-audio cue (see lib/alert-cue) and
+     (b) lands in the shared feed state below. setState runs inside the
+     event callback, never inside an effect body. ---- */
+  useEffect(() => {
+    const stop = startLiveFeed();
+    const unsubscribe = subscribeLiveAlerts((a) => {
+      setLiveAlerts((prev) => [a, ...prev].slice(0, FEED_MAX));
+    });
+    return () => {
+      unsubscribe();
+      stop();
+    };
+  }, []);
 
   /* Persist snapshot + mirror navigation into the URL hash.
    *
@@ -195,12 +291,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     firstHashWriteRef.current = false;
     try {
-      const snap: PersistedSnapshot = { filters, watchlist };
+      const snap: PersistedSnapshot = { filters, watchlist, savedViews, claimNotes };
       window.localStorage.setItem(STORE_KEY, JSON.stringify(snap));
     } catch {
       /* private mode / quota — persistence is best-effort */
     }
-  }, [screen, selectedTopicId, selectedClaimId, filters, watchlist]);
+  }, [screen, selectedTopicId, selectedClaimId, filters, watchlist, savedViews, claimNotes]);
 
   /* Browser Back/Forward + manual hash edits: restore console state from
    * the target hash. setState lives in the event handler (not an effect),
@@ -288,6 +384,90 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setWatchlist((w) => (w.includes(topicId) ? w.filter((t) => t !== topicId) : [...w, topicId]));
   }, []);
 
+  /* ---- saved views ---- */
+  const saveView = useCallback(
+    (name: string, viewScreen?: ScreenId) => {
+      const trimmed = name.trim().slice(0, 40) || `VIEW-${new Date().toISOString().slice(11, 19)}`;
+      const id = `view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const view: SavedView = {
+        id,
+        name: trimmed,
+        /* snapshot the current bank — event handlers always see fresh state
+           through this closure (filters is a dependency below) */
+        filters,
+        screen: viewScreen && VALID_SCREENS.has(viewScreen) ? viewScreen : undefined,
+        savedAt: Date.now(),
+      };
+      setSavedViews((prev) => [...prev.slice(0, 11), view]);
+      return id;
+    },
+    [filters]
+  );
+
+  const applyView = useCallback(
+    (id: string) => {
+      const view = savedViews.find((v) => v.id === id);
+      if (!view?.filters) return;
+      /* apply through the same validation-safe spread the loader uses */
+      setFilters({ ...DEFAULT_FILTERS, ...view.filters });
+      bump();
+      if (view.screen) setScreen(view.screen);
+    },
+    [savedViews, bump]
+  );
+
+  const deleteView = useCallback((id: string) => {
+    setSavedViews((views) => views.filter((v) => v.id !== id));
+  }, []);
+
+  const isViewActive = useCallback(
+    (view: SavedView) => {
+      const f = view.filters;
+      return (
+        !!f &&
+        f.platform === filters.platform &&
+        f.range === filters.range &&
+        f.customDays === filters.customDays &&
+        f.query === filters.query &&
+        f.languages.length === filters.languages.length &&
+        f.languages.every((c) => filters.languages.includes(c))
+      );
+    },
+    [filters]
+  );
+
+  /* ---- analyst annotations ---- */
+  const setClaimNote = useCallback((claimId: string, text: string) => {
+    setClaimNotes((notes) => {
+      const trimmed = text.slice(0, 2_000);
+      if (!trimmed.trim()) {
+        const { [claimId]: _drop, ...rest } = notes;
+        return rest;
+      }
+      return { ...notes, [claimId]: { text: trimmed, updatedAt: Date.now() } };
+    });
+  }, []);
+
+  /* ---- alert feed bus ---- */
+  const alertsFeed = useMemo(() => {
+    const base = getAlerts().sort((a, b) => b.t - a.t);
+    const seen = new Set(liveAlerts.map((a) => a.id));
+    return [...liveAlerts, ...base.filter((a) => !seen.has(a.id))].slice(0, FEED_MAX);
+  }, [liveAlerts]);
+
+  const alertUnread = useMemo(
+    () => alertsFeed.filter((a) => isHotAlert(a) && !alertReadIds.has(a.id)).length,
+    [alertsFeed, alertReadIds]
+  );
+
+  const markAlertsRead = useCallback((ids: string[]) => {
+    setAlertReadIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  }, []);
+
   const value = useMemo(
     () => ({
       filters,
@@ -309,6 +489,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       watchlist,
       toggleWatchlist,
       isWatched: (topicId: string) => watchlist.includes(topicId),
+      savedViews,
+      saveView,
+      applyView,
+      deleteView,
+      isViewActive,
+      claimNotes,
+      setClaimNote,
+      alertsFeed,
+      alertUnread,
+      markAlertsRead,
       refreshKey,
     }),
     [
@@ -327,6 +517,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reportOpen,
       watchlist,
       toggleWatchlist,
+      savedViews,
+      saveView,
+      applyView,
+      deleteView,
+      isViewActive,
+      claimNotes,
+      setClaimNote,
+      alertsFeed,
+      alertUnread,
+      markAlertsRead,
       refreshKey,
     ]
   );
