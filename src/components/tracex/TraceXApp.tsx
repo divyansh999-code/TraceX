@@ -16,7 +16,9 @@ import { TopBar } from "./shell/TopBar";
 import { StatusBar } from "./shell/StatusBar";
 import { BootSplash } from "./shell/BootSplash";
 import { HotkeyHelp } from "./shell/HotkeyHelp";
+import { GuidedTour } from "./shell/GuidedTour";
 import { ReportModal } from "./modals/ReportModal";
+import { MethodologyDialog } from "./modals/MethodologyDialog";
 import { OverviewScreen } from "./screens/OverviewScreen";
 import { TrendsScreen } from "./screens/TrendsScreen";
 import { SentimentScreen } from "./screens/SentimentScreen";
@@ -101,7 +103,7 @@ function MobileNav() {
   );
 }
 
-/** Global hotkeys: 1–8 switch modules. */
+/** Global hotkeys: 1–8 switch modules (muted while the guided tour runs). */
 function ModuleHotkeys() {
   const { go } = useApp();
   useEffect(() => {
@@ -109,6 +111,8 @@ function ModuleHotkeys() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      /* the guided tour owns keyboard focus while it walks the console */
+      if (document.body.classList.contains("tour-active")) return;
       const idx = parseInt(e.key, 10);
       if (idx >= 1 && idx <= 8) {
         go(MOBILE_NAV[idx - 1].id);
@@ -162,12 +166,15 @@ function Console() {
           <AlertCueListener />
           <DocumentTitle />
           <HotkeyHelp />
+          <GuidedTour />
           <ModuleCanvas />
         </main>
         <StatusBar />
       </div>
       {/* global intelligence report — openable from any screen via ⌘K */}
       <ReportModal open={reportOpen} onOpenChange={setReportOpen} />
+      {/* methodology & provenance briefing — palette / cheatsheet reachable */}
+      <MethodologyDialog />
     </div>
   );
 }

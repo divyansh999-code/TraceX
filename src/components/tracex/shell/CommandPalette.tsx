@@ -41,9 +41,12 @@ import {
   Languages,
   CornerDownLeft,
   Bookmark,
+  Footprints,
+  FlaskConical,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ScreenId } from "@/lib/mock/types";
+import { startGuidedTour } from "./GuidedTour";
 
 const MODULES: { id: ScreenId; code: string; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", code: "01", label: "Overview — Intelligence Fusion", icon: LayoutDashboard },
@@ -62,6 +65,22 @@ const PLATFORM_META = {
   telegram: { label: "Filter: Telegram only", icon: Send },
 } as const;
 
+/** Strict token-based palette filter (v0.13): every whitespace-separated
+ *  query token must occur as a substring of the item value — no more
+ *  loose fuzzy matches (searching "tour" used to highlight a narrative
+ *  with "transactions…"). Prefix and whole-phrase matches rank higher. */
+const tokenFilter: (value: string, search: string) => number = (value, search) => {
+  const v = value.toLowerCase();
+  const q = search.toLowerCase().trim();
+  if (!q) return 1;
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (!tokens.every((t) => v.includes(t))) return 0;
+  let score = 1;
+  if (v.includes(q)) score += 50; // whole phrase
+  if (v.startsWith(tokens[0])) score += 100; // leading token
+  return score;
+};
+
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const {
@@ -73,6 +92,7 @@ export function CommandPalette() {
     filters,
     watchlist,
     setReportOpen,
+    setMethodologyOpen,
     savedViews,
     applyView,
     isViewActive,
@@ -124,6 +144,7 @@ export function CommandPalette() {
         title="TraceX command palette"
         description="Jump to modules, narratives, claims and filter actions"
         className="sm:max-w-xl"
+        filter={tokenFilter}
       >
         <CommandInput placeholder="Type a module, narrative, claim, handle or action…" />
         <CommandList className="max-h-[420px]">
@@ -314,6 +335,26 @@ export function CommandPalette() {
             >
               <FileDown className="size-3.5 text-muted-foreground" />
               <span>Generate intelligence report</span>
+            </CommandItem>
+            <CommandItem
+              value="tour replay guided walkthrough onboarding start"
+              onSelect={() => {
+                setOpen(false);
+                startGuidedTour();
+              }}
+            >
+              <Footprints className="size-3.5 text-muted-foreground" />
+              <span>Replay the guided console tour</span>
+            </CommandItem>
+            <CommandItem
+              value="methodology data provenance privacy scoring how it works"
+              onSelect={() => {
+                setMethodologyOpen(true);
+                setOpen(false);
+              }}
+            >
+              <FlaskConical className="size-3.5 text-muted-foreground" />
+              <span>Methodology &amp; data provenance</span>
             </CommandItem>
             <CommandItem
               value="toggle theme dark light"

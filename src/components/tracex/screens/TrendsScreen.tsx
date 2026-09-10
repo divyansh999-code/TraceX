@@ -175,9 +175,11 @@ function TopicDrill({
         ? "negative"
         : "neutral";
   const domTone: "green" | "red" | "slate" = dom === "positive" ? "green" : dom === "negative" ? "red" : "slate";
-  const langs = topic.languages
-    .map((code) => LANGUAGES.find((l) => l.code === code)?.native ?? code)
-    .join(" · ");
+  const langNames = topic.languages.map((code) => LANGUAGES.find((l) => l.code === code)?.native ?? code);
+  /* show the first three languages inline; fold the rest behind a +N chip
+     (full list in its tooltip) so narrow sheets never wrap into noise */
+  const langsShown = langNames.slice(0, 3);
+  const langsHidden = langNames.slice(3);
 
   return (
     <>
@@ -221,12 +223,19 @@ function TopicDrill({
             label="Risk score"
             value={<span className={riskTextClass(riskTone(topic.risk))}>{fmtScore(topic.risk)}</span>}
           />
-          {/* Languages list can be long — wrappable right-aligned row instead
-              of MetricRow (whose value is shrink-0 and would overflow the sheet). */}
+          {/* Languages — first three inline, remainder behind a +N chip */}
           <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-border/60 last:border-0">
             <span className="text-xs text-muted-foreground shrink-0">Languages</span>
-            <span className="font-mono text-xs tnum text-foreground text-right min-w-0 break-words">
-              {langs || "—"}
+            <span className="font-mono text-xs tnum text-foreground text-right min-w-0">
+              {langsShown.length > 0 ? langsShown.join(" · ") : "—"}
+              {langsHidden.length > 0 && (
+                <span
+                  className="ml-1.5 inline-flex items-center h-4 px-1 rounded-[3px] bg-secondary border border-border text-[10px] text-muted-foreground"
+                  title={`Also present: ${langsHidden.join(" · ")}`}
+                >
+                  +{langsHidden.length}
+                </span>
+              )}
             </span>
           </div>
         </div>

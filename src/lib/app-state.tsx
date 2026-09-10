@@ -23,6 +23,10 @@
  * - Live alert bus: a shell-level feed singleton pushes fresh alerts here,
  *   so the bell badge, the document title and the Overview feed share one
  *   source and the critical-audio cue fires on every screen.
+ *
+ * v0.13 additions:
+ * - `methodologyOpen` — the provenance briefing dialog, global like the
+ *   report modal (palette / cheatsheet / status bar can open it).
  */
 import {
   createContext,
@@ -72,6 +76,10 @@ interface AppState {
   /** Global intelligence-report modal (mounted at shell level). */
   reportOpen: boolean;
   setReportOpen: (open: boolean) => void;
+
+  /** Global methodology / provenance briefing (mounted at shell level). */
+  methodologyOpen: boolean;
+  setMethodologyOpen: (open: boolean) => void;
 
   /** Starred narratives — persisted across sessions. */
   watchlist: string[];
@@ -244,6 +252,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [savedViews, setSavedViews] = useState<SavedView[]>(INITIAL.savedViews);
   const [claimNotes, setClaimNotes] = useState<Record<string, ClaimNote>>(INITIAL.claimNotes);
   const [reportOpen, setReportOpen] = useState(false);
+  const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   /* live alert bus (v0.12): arriving alerts live here so the bell, the
      Overview feed and the tab-title unread count all share one source. */
@@ -486,6 +495,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSelectedClaimId,
       reportOpen,
       setReportOpen,
+      methodologyOpen,
+      setMethodologyOpen,
       watchlist,
       toggleWatchlist,
       isWatched: (topicId: string) => watchlist.includes(topicId),
@@ -515,6 +526,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       selectedTopicId,
       selectedClaimId,
       reportOpen,
+      methodologyOpen,
       watchlist,
       toggleWatchlist,
       savedViews,

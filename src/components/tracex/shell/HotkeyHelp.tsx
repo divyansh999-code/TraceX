@@ -12,7 +12,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Kbd, type Hotkey } from "../common/Kbd";
+import { useApp } from "@/lib/app-state";
+import { startGuidedTour } from "./GuidedTour";
+import { Footprints, FlaskConical } from "lucide-react";
 
 const SHORTCUTS: { group: string; items: Hotkey[] }[] = [
   {
@@ -45,12 +49,14 @@ const SHORTCUTS: { group: string; items: Hotkey[] }[] = [
       { keys: ["←", "→"], label: "Browser Back / Forward — walk console history" },
       { keys: ["←", "→"], label: "Walk heat-calendar days once a cell is focused (Home/End jump to window edges)" },
       { keys: ["Tab"], label: "Focus the heat calendar, then Enter to pivot trends to that day" },
+      { keys: ["▶"], label: "Overview temporal replay — scrub 30 days of corpus, KPIs and trends rewind with it" },
     ],
   },
 ];
 
 export function HotkeyHelp() {
   const [open, setOpen] = useState(false);
+  const { setMethodologyOpen } = useApp();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -86,6 +92,32 @@ export function HotkeyHelp() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* relaunchers — tour + methodology briefing */}
+        <div className="border-t border-border pt-3 mt-1 flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px] gap-1.5"
+            onClick={() => {
+              setOpen(false);
+              startGuidedTour();
+            }}
+          >
+            <Footprints className="size-3" /> Replay guided tour
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px] gap-1.5"
+            onClick={() => {
+              setOpen(false);
+              setMethodologyOpen(true);
+            }}
+          >
+            <FlaskConical className="size-3" /> Methodology
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

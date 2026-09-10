@@ -52,7 +52,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2" aria-label="Console modules">
+      <nav className="flex-1 overflow-y-auto py-3 px-2" aria-label="Console modules" data-tour="module-rail">
         <div className="taxonomy text-muted-foreground/60 px-2 pb-2">Modules</div>
         <ul className="space-y-0.5">
           {NAV.map((item) => {
@@ -99,7 +99,7 @@ export function Sidebar() {
 
       {/* Watchlist — starred narratives */}
       {watchlist.length > 0 && (
-        <div className="border-t border-sidebar-border py-3 px-2 shrink-0">
+        <div className="border-t border-sidebar-border py-3 px-2 shrink-0" data-tour="watchlist">
           <div className="taxonomy text-muted-foreground/60 px-2 pb-2 flex items-center gap-1.5">
             <Star className="size-2.5 text-primary" />
             Watchlist

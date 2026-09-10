@@ -143,24 +143,25 @@ export function TopBar() {
           )}
         </div>
 
-        {/* Platform */}
-        <Segmented<Platform>
-          value={filters.platform}
-          onChange={setPlatform}
-          options={[
-            {
-              value: "all",
-              label: (
-                <>
-                  <span className="size-2 rounded-[2px] bg-signal-cyan inline-block" /> ALL
-                </>
-              ),
-              title: "Both platforms",
-            },
-            { value: "x", label: <><XGlyph /> X</>, title: "X (Twitter) only" },
-            { value: "telegram", label: <><Send className="size-3" /> TG</>, title: "Telegram only" },
-          ]}
-        />
+        {/* Platform + range — the filter bank core (guided-tour anchor) */}
+        <div className="flex items-center gap-2 shrink-0" data-tour="filter-bank">
+          <Segmented<Platform>
+            value={filters.platform}
+            onChange={setPlatform}
+            options={[
+              {
+                value: "all",
+                label: (
+                  <>
+                    <span className="size-2 rounded-[2px] bg-signal-cyan inline-block" /> ALL
+                  </>
+                ),
+                title: "Both platforms",
+              },
+              { value: "x", label: <><XGlyph /> X</>, title: "X (Twitter) only" },
+              { value: "telegram", label: <><Send className="size-3" /> TG</>, title: "Telegram only" },
+            ]}
+          />
 
         {/* Range */}
         <div className="hidden sm:flex items-center gap-2">
@@ -211,6 +212,7 @@ export function TopBar() {
               </Button>
             </PopoverContent>
           </Popover>
+        </div>
         </div>
 
         <div className="ml-auto flex items-center gap-3 shrink-0">

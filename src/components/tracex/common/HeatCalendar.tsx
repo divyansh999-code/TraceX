@@ -24,11 +24,15 @@ export function HeatCalendar({
   days,
   onSelect,
   compact = false,
+  activeT,
 }: {
   days: HeatDay[];
   onSelect?: (day: HeatDay) => void;
   /** Sheet-friendly mode: smaller cells, no legend — fits a 420px drill-down. */
   compact?: boolean;
+  /** Temporal replay (v0.13): days after this epoch are still-to-come —
+   *  rendered dimmed so the strip tracks the time-machine playhead. */
+  activeT?: number;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   /* roving tabindex cursor — starts on the most recent day; the visible
@@ -84,6 +88,7 @@ export function HeatCalendar({
               className={cn(
                 "relative rounded-[3px] cursor-pointer transition-transform",
                 compact ? "size-2.5" : "size-3.5",
+                activeT != null && d.t > activeT && "opacity-25 saturate-50",
                 "hover:scale-125 focus-visible:outline-1 focus-visible:outline-ring",
                 d.spike && "ring-1 ring-signal-red/80",
                 touched && i === cursor && (compact
@@ -136,7 +141,7 @@ export function HeatCalendar({
           </span>
         ) : (
           <span className="min-w-0 truncate">
-            avg {fmtFull(avg)}/day · {spikes} anomaly{spikes === 1 ? "" : "es"} flagged vs baseline
+            avg {fmtFull(avg)}/day · {spikes === 1 ? "1 anomaly" : `${spikes} anomalies`} flagged vs baseline
           </span>
         )}
         <span className={cn("ml-auto shrink-0", compact ? "hidden" : "hidden sm:inline")} aria-hidden="true">

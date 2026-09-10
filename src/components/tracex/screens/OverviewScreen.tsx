@@ -5,7 +5,7 @@
  * Mission control: KPIs, volume × sentiment band, live alert feed,
  * trending narratives, network preview, module pipeline strip.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/app-state";
 import {
   getKpis,
@@ -25,15 +25,18 @@ import { ScreenHeader } from "../common/ScreenHeader";
 import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
 import { useRefresh, useNow, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
 import { HeatCalendar, type HeatDay } from "../common/HeatCalendar";
+import { TimeMachine } from "../common/TimeMachine";
 import {
   ResponsiveContainer,
-  AreaChart,
+  ComposedChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ReferenceDot,
+  ReferenceLine,
 } from "recharts";
 import {
   Database,
@@ -50,6 +53,7 @@ import {
   MessageSquare,
   Fingerprint,
   Cpu,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -280,7 +284,7 @@ function ModuleStrip() {
 /* ---------------- Main screen ---------------- */
 
 export function OverviewScreen() {
-  const { filters, go, setRange } = useApp();
+  const { filters, go, setRange, alertsFeed } = useApp();
   const ready = useRefresh("overview");
 
   const kpis = useMemo(() => getKpis(filters), [filters]);
@@ -307,6 +311,105 @@ export function OverviewScreen() {
   );
   const chartTheme = useChartTheme();
 
+  /* ---- temporal replay (v0.13 time machine) ----
+     cursorIdx = null → live full window; otherwise the playhead index.
+     Playback = a self-rescheduling timeout (recreated per tick because
+     cursorIdx is a dependency, so the closure always sees fresh state);
+     ALL setState happens inside the async tick callback — lint-clean. */
+  const [cursorIdx, setCursorIdx] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  const stepMs = Math.max(120, Math.round(14_000 / Math.max(2, series.length)));
+  useEffect(() => {
+    if (!playing || series.length < 2) return;
+    const cur = cursorIdx ?? series.length - 1;
+    const id = setTimeout(() => {
+      if (cur >= series.length - 1) {
+        /* swept to the live edge — hand back to the live window */
+        setPlaying(false);
+        setCursorIdx(null);
+        return;
+      }
+      setCursorIdx(cur + 1);
+    }, stepMs);
+    return () => clearTimeout(id);
+  }, [playing, cursorIdx, series.length, stepMs]);
+
+  const isLive = cursorIdx == null;
+  const effCursor = Math.min(cursorIdx ?? series.length - 1, series.length - 1);
+  /* every artefact below renders from `view` — the as-of slice */
+  const view = useMemo(
+    () => (isLive ? series : series.slice(0, effCursor + 1)),
+    [series, isLive, effCursor]
+  );
+  const viewEnd = view[view.length - 1];
+
+  const totalVol = useMemo(() => series.reduce((a, p) => a + p.total, 0) || 1, [series]);
+  const viewVol = useMemo(() => view.reduce((a, p) => a + p.total, 0), [view]);
+  /* as-of KPI derivations — real arithmetic over the sliced corpus */
+  const postsAsOf = Math.round(kpis.postsTracked * (viewVol / totalVol));
+  const sentimentAsOf = useMemo(() => {
+    const pos = view.reduce((a, p) => a + p.positive, 0);
+    const neg = view.reduce((a, p) => a + p.negative, 0);
+    const tot = view.reduce((a, p) => a + p.total, 0) || 1;
+    return (pos - neg) / tot;
+  }, [view]);
+  const narrativesAsOf = useMemo(
+    () =>
+      topics.filter((t) => {
+        const prefix = t.spark.slice(0, effCursor + 1);
+        const full = t.spark.reduce((a, b) => a + b, 0) || 1;
+        return prefix.reduce((a, b) => a + b, 0) / full >= 0.12;
+      }).length,
+    [topics, effCursor]
+  );
+  const highRiskAsOf = useMemo(() => {
+    if (isLive) return kpis.highRiskAlerts;
+    const edge = viewEnd?.t ?? 0;
+    return alertsFeed.filter(
+      (a) => a.t <= edge && a.status === "New" && (a.severity === "critical" || a.severity === "high")
+    ).length;
+  }, [alertsFeed, isLive, viewEnd, kpis.highRiskAlerts]);
+
+  /* chart payload: stacked sentiment up to the playhead, ghost of the
+     still-upcoming window after it (null-padded so recharts breaks both) */
+  const chartData = useMemo(
+    () =>
+      series.map((p, i) =>
+        i <= effCursor
+          ? { ...p, ghost: null as number | null }
+          : { ...p, positive: null, neutral: null, negative: null, baseline: null, ghost: p.total }
+      ),
+    [series, effCursor]
+  );
+
+  const onReplayCursor = (i: number | null) => {
+    setPlaying(false);
+    setCursorIdx(i);
+  };
+
+  /* trending rows during replay: only narratives that have actually
+     emerged by the playhead, ranked by their as-of growth rate, with
+     volume and spark truncated to the arrived prefix */
+  const trendingAsOf = useMemo(() => {
+    if (isLive) return topics.map((t) => ({ ...t, share: 1, asOfChange: t.topic.change24h, spark: t.spark }));
+    const rows = topics
+      .map((t) => {
+        const prefix = t.spark.slice(0, effCursor + 1);
+        const full = t.spark.reduce((a, b) => a + b, 0) || 1;
+        const share = prefix.reduce((a, b) => a + b, 0) / full;
+        const n = prefix.length;
+        const last3 = prefix.slice(-3).reduce((a, b) => a + b, 0) / Math.max(1, Math.min(3, n));
+        const prev3 = prefix.slice(Math.max(0, n - 6), Math.max(0, n - 3));
+        const prevAvg = prev3.length ? prev3.reduce((a, b) => a + b, 0) / prev3.length : last3;
+        const asOfChange = prevAvg > 0 ? ((last3 - prevAvg) / prevAvg) * 100 : t.topic.change24h;
+        return { ...t, spark: prefix, share, asOfChange };
+      })
+      .filter((t) => t.share >= 0.12)
+      .sort((a, b) => b.asOfChange - a.asOfChange);
+    return rows.slice(0, 7);
+  }, [topics, isLive, effCursor]);
+
   if (!ready) {
     return (
       <div className="space-y-4 animate-in fade-in duration-200">
@@ -322,6 +425,8 @@ export function OverviewScreen() {
 
   const windowLabel = WINDOW_LABEL[filters.range] ?? "window";
   const sentimentToneOfKpi = sentimentTone(kpis.avgSentiment);
+  const sentimentToneAsOf = sentimentTone(sentimentAsOf);
+  const replayLabel = viewEnd?.label ?? "—";
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -330,13 +435,18 @@ export function OverviewScreen() {
         title="Mission Control"
         description={`Unified signal picture across X and Telegram for the ${windowLabel} — volume, narratives, influence, bot activity and misinformation risk in a single operating view.`}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge tone="cyan" dot>
               {filters.platform === "all" ? "X + Telegram" : filters.platform === "x" ? "X only" : "Telegram only"}
             </Badge>
             <Badge tone={sentimentToneOfKpi} dot>
               net {fmtNet(kpis.avgSentiment)}
             </Badge>
+            {!isLive && (
+              <Badge tone="orange" dot>
+                <History className="size-2.5" /> replay · as of {replayLabel}
+              </Badge>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -354,54 +464,58 @@ export function OverviewScreen() {
       />
 
       {/* KPI row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" data-tour="kpi-row">
         <KpiCard
           label="Posts tracked"
-          value={fmtCompact(kpis.postsTracked)}
+          value={fmtCompact(postsAsOf)}
           icon={MessageSquare}
           tone="cyan"
           delta={12.4}
-          spark={series.map((p) => p.total)}
+          spark={view.map((p) => p.total)}
           sparkColor={CHART.cyan}
           footnote={
-            <>
-              <span className="text-signal-cyan">X {Math.round(kpis.xShare * 100)}%</span>
-              <span className="text-border">/</span>
-              <span className="text-signal-green">TG {Math.round(kpis.telegramShare * 100)}%</span>
-            </>
+            isLive ? (
+              <>
+                <span className="text-signal-cyan">X {Math.round(kpis.xShare * 100)}%</span>
+                <span className="text-border">/</span>
+                <span className="text-signal-green">TG {Math.round(kpis.telegramShare * 100)}%</span>
+              </>
+            ) : (
+              <span className="text-signal-orange">as of {replayLabel}</span>
+            )
           }
         />
         <KpiCard
           label="Active narratives"
-          value={String(kpis.activeNarratives)}
+          value={String(narrativesAsOf)}
           icon={GitBranch}
           tone="orange"
           delta={8.1}
-          spark={series.map((p) => Math.max(1, Math.round(p.total / 900)))}
+          spark={view.map((p) => Math.max(1, Math.round(p.total / 900)))}
           sparkColor={CHART.orange}
-          footnote={<span>3 emerging · 2 coordinated</span>}
+          footnote={<span>{isLive ? "3 emerging · 2 coordinated" : `${Math.round((viewVol / totalVol) * 100)}% of window volume`}</span>}
         />
         <KpiCard
           label="Avg sentiment"
-          value={fmtNet(kpis.avgSentiment)}
+          value={fmtNet(sentimentAsOf)}
           icon={HeartPulse}
-          tone={sentimentToneOfKpi === "green" ? "green" : sentimentToneOfKpi === "red" ? "red" : "amber"}
+          tone={sentimentToneAsOf === "green" ? "green" : sentimentToneAsOf === "red" ? "red" : "amber"}
           delta={Number((kpis.sentimentDelta * 100).toFixed(1))}
           deltaSuffix=""
-          spark={series.map((p) => (p.positive - p.negative) / Math.max(1, p.total))}
-          sparkColor={sentimentToneOfKpi === "red" ? CHART.red : CHART.green}
-          footnote={<span>scale −1.00 … +1.00</span>}
+          spark={view.map((p) => (p.positive - p.negative) / Math.max(1, p.total))}
+          sparkColor={sentimentToneAsOf === "red" ? CHART.red : CHART.green}
+          footnote={<span>{isLive ? "scale −1.00 … +1.00" : `as of ${replayLabel}`}</span>}
         />
         <KpiCard
           label="High-risk alerts"
-          value={String(kpis.highRiskAlerts)}
+          value={String(highRiskAsOf)}
           icon={ShieldAlert}
           tone="red"
           invertDelta
           delta={25}
-          spark={[2, 3, 2, 4, 3, 5, 4, 6, 5, 4]}
+          spark={view.map((p) => (p.spike ? 5 : 2))}
           sparkColor={CHART.red}
-          footnote={<span className="text-signal-red">2 critical · 2 high</span>}
+          footnote={<span className="text-signal-red">{isLive ? "2 critical · 2 high" : `timeline to ${replayLabel}`}</span>}
         />
       </div>
 
@@ -409,14 +523,14 @@ export function OverviewScreen() {
       <Panel
         title="Corpus intensity"
         icon={Cpu}
-        sub="30-day daily volume · reflects filter bank"
+        sub={isLive ? "30-day daily volume · reflects filter bank" : `30-day volume · playhead ${replayLabel}`}
         right={
           <span className="font-mono text-[10px] text-muted-foreground/70 hidden sm:inline">
             click a day → trend explorer
           </span>
         }
       >
-        <HeatCalendar days={heatDays} onSelect={onHeatDay} />
+        <HeatCalendar days={heatDays} onSelect={onHeatDay} activeT={isLive ? undefined : (viewEnd?.t ?? undefined)} />
       </Panel>
 
       {/* Volume × sentiment band + live alerts */}
@@ -425,7 +539,7 @@ export function OverviewScreen() {
           className="xl:col-span-8"
           title="Conversation volume · sentiment composition"
           icon={Flame}
-          sub={windowLabel}
+          sub={isLive ? windowLabel : `temporal replay · as of ${replayLabel}`}
           right={
             <Legend
               items={[
@@ -434,13 +548,14 @@ export function OverviewScreen() {
                 { label: "Negative", color: CHART.red },
                 { label: "Baseline", color: CHART.cyan, dashed: true },
                 { label: "Spike", color: CHART.amber },
+                ...(isLive ? [] : [{ label: "Upcoming", color: "#64748B", dashed: true }]),
               ]}
             />
           }
         >
           <div className="h-64 md:h-72 -mx-1">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="ovPos" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={CHART.green} stopOpacity={0.55} />
@@ -519,7 +634,42 @@ export function OverviewScreen() {
                   strokeWidth={0}
                   fill="url(#ovNeg)"
                 />
-                {series
+                {/* historical baseline — dashed cyan reference (promised by the legend) */}
+                <Line
+                  type="monotone"
+                  dataKey="baseline"
+                  name="Baseline"
+                  stroke={CHART.cyan}
+                  strokeOpacity={0.7}
+                  strokeWidth={1}
+                  strokeDasharray="3 4"
+                  dot={false}
+                  connectNulls={false}
+                />
+                {/* still-upcoming window behind the replay playhead — dimmed ghost */}
+                {!isLive && (
+                  <Line
+                    type="monotone"
+                    dataKey="ghost"
+                    name="Upcoming"
+                    stroke={"#64748B"}
+                    strokeOpacity={0.55}
+                    strokeWidth={1}
+                    strokeDasharray="2 6"
+                    dot={false}
+                    connectNulls={false}
+                  />
+                )}
+                {/* replay playhead — vertical hairline at the as-of edge */}
+                {!isLive && viewEnd && (
+                  <ReferenceLine
+                    x={viewEnd.t}
+                    stroke={CHART.orange}
+                    strokeOpacity={0.55}
+                    strokeWidth={1}
+                  />
+                )}
+                {view
                   .filter((p) => p.spike)
                   .map((p) => (
                     <ReferenceDot
@@ -532,15 +682,27 @@ export function OverviewScreen() {
                       strokeWidth={1}
                     />
                   ))}
-              </AreaChart>
+              </ComposedChart>
             </ResponsiveContainer>
+          </div>
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <Taxonomy>Temporal replay</Taxonomy>
+            <div className="mt-2">
+              <TimeMachine
+                points={series}
+                cursor={cursorIdx}
+                onCursor={onReplayCursor}
+                playing={playing}
+                onPlaying={setPlaying}
+              />
+            </div>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-3 border-t border-border/60 pt-3">
             <div>
-              <Taxonomy>Peak hour</Taxonomy>
+              <Taxonomy>Peak {isLive ? "hour" : "to date"}</Taxonomy>
               <div className="font-mono text-sm tnum text-foreground mt-0.5">
                 {(() => {
-                  const peak = series.reduce((a, b) => (b.total > a.total ? b : a), series[0]);
+                  const peak = view.reduce((a, b) => (b.total > a.total ? b : a), view[0]);
                   return peak ? `${peak.label} · ${fmtCompact(peak.total)}` : "—";
                 })()}
               </div>
@@ -549,8 +711,8 @@ export function OverviewScreen() {
               <Taxonomy>Negative share</Taxonomy>
               <div className="font-mono text-sm tnum text-signal-red mt-0.5">
                 {(() => {
-                  const tot = series.reduce((a, p) => a + p.total, 0) || 1;
-                  const neg = series.reduce((a, p) => a + p.negative, 0);
+                  const tot = view.reduce((a, p) => a + p.total, 0) || 1;
+                  const neg = view.reduce((a, p) => a + p.negative, 0);
                   return `${((neg / tot) * 100).toFixed(1)}%`;
                 })()}
               </div>
@@ -560,18 +722,18 @@ export function OverviewScreen() {
               <div
                 className={cn(
                   "font-mono text-sm tnum mt-0.5",
-                  series.filter((p) => p.spike).length > 0 ? "text-signal-amber" : "text-muted-foreground"
+                  view.filter((p) => p.spike).length > 0 ? "text-signal-amber" : "text-muted-foreground"
                 )}
               >
-                {series.filter((p) => p.spike).length > 0
-                  ? `${series.filter((p) => p.spike).length} vs baseline`
+                {view.filter((p) => p.spike).length > 0
+                  ? `${view.filter((p) => p.spike).length} vs baseline`
                   : "none · nominal"}
               </div>
             </div>
           </div>
         </Panel>
 
-        <div className="xl:col-span-4 min-w-0">
+        <div className="xl:col-span-4 min-w-0" data-tour="live-feed">
           <LiveAlertFeed />
         </div>
       </div>
@@ -582,7 +744,7 @@ export function OverviewScreen() {
           className="xl:col-span-7"
           title="Top trending narratives"
           icon={Flame}
-          sub={`24h Δ · ${windowLabel}`}
+          sub={isLive ? `24h Δ · ${windowLabel}` : `emerged by ${replayLabel} · temporal replay`}
           bodyClassName="p-0"
           right={
             <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => go("trends")}>
@@ -602,7 +764,7 @@ export function OverviewScreen() {
                 </tr>
               </thead>
               <tbody>
-                {topics.map(({ topic, spark }) => {
+                {trendingAsOf.map(({ topic, spark, share, asOfChange }) => {
                   const dom =
                     topic.sentiment.positive > topic.sentiment.negative
                       ? topic.sentiment.positive > topic.sentiment.neutral
@@ -626,10 +788,10 @@ export function OverviewScreen() {
                         <div className="text-[10px] text-muted-foreground truncate max-w-44 mt-0.5">{topic.gloss}</div>
                       </td>
                       <td className="px-4 py-2.5 font-mono text-xs tnum text-foreground whitespace-nowrap">
-                        {fmtCompact(topic.baseVolume * 1.75)}
+                        {fmtCompact(topic.baseVolume * 1.75 * (isLive ? 1 : Math.max(0.02, share)))}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
-                        <Delta value={topic.change24h} />
+                        <Delta value={Number(asOfChange.toFixed(1))} />
                       </td>
                       <td className="px-4 py-2.5">
                         <Badge tone={dom === "positive" ? "green" : dom === "negative" ? "red" : "slate"}>

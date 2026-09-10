@@ -1,0 +1,673 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * OVERVIEW — the Intelligence Fusion Dashboard.
+     5→ * Mission control: KPIs, volume × sentiment band, live alert feed,
+     6→ * trending narratives, network preview, module pipeline strip.
+     7→ */
+     8→import { useMemo } from "react";
+     9→import { useApp } from "@/lib/app-state";
+    10→import {
+    11→  getKpis,
+    12→  getVolumeSeries,
+    13→  effectiveTopics,
+    14→  getTopicSeries,
+    15→  getNetwork,
+    16→  getInfluencers,
+    17→  NOW,
+    18→} from "@/lib/mock";
+    19→import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned, fmtFull } from "@/lib/fmt";
+    20→import { cn } from "@/lib/utils";
+    21→import { Panel, Badge, Delta, ScoreBar, SeverityDot, LiveDot, Legend, Taxonomy } from "../common/primitives";
+    22→import { KpiCard } from "../common/KpiCard";
+    23→import { Sparkline } from "../common/Sparkline";
+    24→import { ScreenHeader } from "../common/ScreenHeader";
+    25→import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
+    26→import { useRefresh, useNow, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
+    27→import { HeatCalendar, type HeatDay } from "../common/HeatCalendar";
+    28→import {
+    29→  ResponsiveContainer,
+    30→  AreaChart,
+    31→  Area,
+    32→  XAxis,
+    33→  YAxis,
+    34→  CartesianGrid,
+    35→  Tooltip,
+    36→  ReferenceDot,
+    37→} from "recharts";
+    38→import {
+    39→  Database,
+    40→  GitBranch,
+    41→  HeartPulse,
+    42→  Radar,
+    43→  Bot,
+    44→  Share2,
+    45→  ShieldAlert,
+    46→  Layers,
+    47→  Flame,
+    48→  ArrowUpRight,
+    49→  Users,
+    50→  MessageSquare,
+    51→  Fingerprint,
+    52→  Cpu,
+    53→} from "lucide-react";
+    54→import { Button } from "@/components/ui/button";
+    55→import { toast } from "sonner";
+    56→import type { ScreenId } from "@/lib/mock/types";
+    57→
+    58→const WINDOW_LABEL: Record<string, string> = {
+    59→  "24h": "last 24 hours",
+    60→  "7d": "last 7 days",
+    61→  "30d": "last 30 days",
+    62→  custom: "custom window",
+    63→};
+    64→
+    65→/* ---------------- Live alert feed ---------------- */
+    66→
+    67→/** Consumes the shared live-alert bus (app-state): the shell-level feed
+    68→ *  singleton generates arrivals, fires the audio cue on every screen and
+    69→ *  publishes here — so this panel, the top-bar bell and the tab-title
+    70→ *  unread count all render ONE stream (no per-screen timers). Fresh rows
+    71→ *  animate in via their keyed `feed-arrival` class. */
+    72→function LiveAlertFeed() {
+    73→  const { go, alertsFeed } = useApp();
+    74→  const now = useNow(15_000);
+    75→
+    76→  return (
+    77→    <Panel
+    78→      title="Live alert feed"
+    79→      sub="auto-refresh"
+    80→      icon={Radar}
+    81→      className="min-h-0"
+    82→      bodyClassName="p-0"
+    83→      right={<LiveDot />}
+    84→    >
+    85→      <div className="max-h-[420px] overflow-y-auto divide-y divide-border/60">
+    86→        {alertsFeed.map((a) => (
+    87→          <button
+    88→            key={a.id}
+    89→            type="button"
+    90→            onClick={() => a.linkScreen && go(a.linkScreen)}
+    91→            title={`${a.id} — ${a.title}: ${a.detail}`}
+    92→            className="feed-arrival w-full text-left px-4 py-2.5 hover:bg-accent transition-colors cursor-pointer group"
+    93→          >
+    94→            <div className="flex items-center gap-2">
+    95→              <SeverityDot severity={a.severity} />
+    96→              <span className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+    97→                {a.title}
+    98→              </span>
+    99→              <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground/70 shrink-0">
+   100→                {relTime(a.t, now ? now.getTime() : NOW)}
+   101→              </span>
+   102→            </div>
+   103→            <div className="mt-1 flex items-center gap-2 pl-4">
+   104→              <Badge
+   105→                tone={
+   106→                  a.type === "spike"
+   107→                    ? "orange"
+   108→                    : a.type === "bot-cluster"
+   109→                      ? "red"
+   110→                      : a.type === "misinformation"
+   111→                        ? "amber"
+   112→                        : "cyan"
+   113→                }
+   114→                className="shrink-0"
+   115→              >
+   116→                {a.type}
+   117→              </Badge>
+   118→              <span className="text-[11px] text-muted-foreground truncate" title={a.detail}>
+   119→                {a.detail}
+   120→              </span>
+   121→            </div>
+   122→          </button>
+   123→        ))}
+   124→      </div>
+   125→    </Panel>
+   126→  );
+   127→}
+   128→
+   129→/* ---------------- Network preview (static mini graph) ---------------- */
+   130→
+   131→function NetworkPreview() {
+   132→  const { go } = useApp();
+   133→  const { filters } = useApp();
+   134→  const { nodes, edges, communities } = useMemo(() => getNetwork(filters), [filters]);
+   135→  const influencers = useMemo(() => getInfluencers(filters, 3), [filters]);
+   136→
+   137→  const W = 360;
+   138→  const H = 210;
+   139→  const layout = useMemo(() => {
+   140→    const top = [...nodes].sort((a, b) => b.pageRank - a.pageRank).slice(0, 16);
+   141→    const ids = new Set(top.map((n) => n.id));
+   142→    const subEdges = edges.filter((e) => ids.has(e.source) && ids.has(e.target)).slice(0, 26);
+   143→    // deterministic radial-ish layout
+   144→    const placed = top.map((n, i) => {
+   145→      const angle = (i / top.length) * Math.PI * 2 + (n.id.charCodeAt(4) % 10) * 0.06;
+   146→      const radius = n.pageRank > 0.06 ? 0.28 : n.pageRank > 0.04 ? 0.55 : 0.82;
+   147→      return {
+   148→        ...n,
+   149→        x: W / 2 + Math.cos(angle) * radius * (W / 2 - 18),
+   150→        y: H / 2 + Math.sin(angle) * radius * (H / 2 - 14),
+   151→      };
+   152→    });
+   153→    return { placed, subEdges };
+   154→  }, [nodes, edges]);
+   155→
+   156→  const byId = new Map(layout.placed.map((n) => [n.id, n]));
+   157→  const communityColor = (id: string) => communities.find((c) => c.id === id)?.color ?? "#5FA1C4";
+   158→
+   159→  return (
+   160→    <Panel
+   161→      title="Influence network"
+   162→      sub="preview"
+   163→      icon={Share2}
+   164→      right={
+   165→        <Button
+   166→          variant="outline"
+   167→          size="sm"
+   168→          className="h-6 px-2 text-[10px] gap-1"
+   169→          onClick={() => go("network")}
+   170→        >
+   171→          Open graph <ArrowUpRight className="size-3" />
+   172→        </Button>
+   173→      }
+   174→    >
+   175→      <button
+   176→        type="button"
+   177→        onClick={() => go("network")}
+   178→        className="w-full block cursor-pointer group"
+   179→        aria-label="Open full network analysis"
+   180→      >
+   181→        <svg viewBox={`0 0 ${W} ${H}`} className="w-full group-hover:opacity-90 transition-opacity">
+   182→          {layout.subEdges.map((e, i) => {
+   183→            const a = byId.get(e.source);
+   184→            const b = byId.get(e.target);
+   185→            if (!a || !b) return null;
+   186→            return (
+   187→              <line
+   188→                key={i}
+   189→                x1={a.x}
+   190→                y1={a.y}
+   191→                x2={b.x}
+   192→                y2={b.y}
+   193→                stroke="#232838"
+   194→                strokeWidth={Math.max(0.6, e.weight / 6)}
+   195→              />
+   196→            );
+   197→          })}
+   198→          {layout.placed.map((n) => {
+   199→            const r = 3 + Math.sqrt(n.pageRank) * 34;
+   200→            const bot = n.botProb > 0.6;
+   201→            return (
+   202→              <g key={n.id}>
+   203→                <circle
+   204→                  cx={n.x}
+   205→                  cy={n.y}
+   206→                  r={r}
+   207→                  fill={communityColor(n.communityId)}
+   208→                  fillOpacity={0.85}
+   209→                  stroke={bot ? CHART.red : "none"}
+   210→                  strokeWidth={bot ? 1.4 : 0}
+   211→                />
+   212→                {n.botProb > 0.6 && (
+   213→                  <circle cx={n.x} cy={n.y} r={r + 2.5} fill="none" stroke={CHART.red} strokeOpacity={0.35} />
+   214→                )}
+   215→              </g>
+   216→            );
+   217→          })}
+   218→        </svg>
+   219→      </button>
+   220→      <div className="mt-3 space-y-2">
+   221→        <Taxonomy>Top influencers</Taxonomy>
+   222→        {influencers.map((inf) => (
+   223→          <div key={inf.nodeId} className="flex items-center gap-2 text-xs">
+   224→            <span className="size-2 rounded-[2px] shrink-0" style={{ background: inf.communityColor }} />
+   225→            <span className="font-mono text-[11px] text-foreground truncate">{inf.handle}</span>
+   226→            <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground shrink-0">
+   227→              PR {inf.pageRank.toFixed(3)}
+   228→            </span>
+   229→            <span className="font-mono text-[10px] tnum text-muted-foreground shrink-0 w-12 text-right">
+   230→              {fmtCompact(inf.reach)}
+   231→            </span>
+   232→          </div>
+   233→        ))}
+   234→      </div>
+   235→    </Panel>
+   236→  );
+   237→}
+   238→
+   239→/* ---------------- Module pipeline strip ---------------- */
+   240→
+   241→const MODULES: { icon: typeof Database; name: string; metric: string; spark: number[]; screen: ScreenId }[] = [
+   242→  { icon: Database, name: "API Ingestion", metric: "12.4k/min", spark: [8, 9, 11, 10, 12, 13, 12, 14, 13, 15], screen: "overview" },
+   243→  { icon: Fingerprint, name: "Demographics", metric: "k≥50", spark: [5, 6, 5, 7, 6, 6, 7, 6, 7, 7], screen: "demographics" },
+   244→  { icon: HeartPulse, name: "Sentiment", metric: "7 langs", spark: [4, 5, 6, 5, 6, 7, 6, 7, 8, 7], screen: "sentiment" },
+   245→  { icon: Flame, name: "Trend Detection", metric: "z>2.5", spark: [3, 5, 4, 6, 8, 7, 9, 11, 10, 12], screen: "trends" },
+   246→  { icon: Bot, name: "Bot Detection", metric: "5k sample", spark: [2, 3, 2, 4, 3, 5, 4, 6, 5, 6], screen: "bots" },
+   247→  { icon: Share2, name: "Network Analysis", metric: "90 nodes", spark: [6, 6, 7, 7, 8, 8, 9, 8, 9, 10], screen: "network" },
+   248→  { icon: ShieldAlert, name: "Misinformation", metric: "10 claims", spark: [4, 5, 7, 6, 8, 9, 8, 10, 11, 12], screen: "misinfo" },
+   249→  { icon: Layers, name: "Intelligence Fusion", metric: "this view", spark: [7, 8, 8, 9, 10, 9, 10, 11, 12, 13], screen: "overview" },
+   250→];
+   251→
+   252→function ModuleStrip() {
+   253→  const { go } = useApp();
+   254→  return (
+   255→    <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
+   256→      {MODULES.map((m) => (
+   257→        <button
+   258→          key={m.name}
+   259→          type="button"
+   260→          onClick={() => go(m.screen)}
+   261→          title={`Open the ${m.screen} module — pipeline stage: ${m.name.toLowerCase()}`}
+   262→          className="group text-left bg-card border border-border rounded-lg p-3 hover:border-primary/50 hover:bg-accent/40 transition-colors cursor-pointer"
+   263→        >
+   264→          <div className="flex items-center gap-2">
+   265→            <m.icon className="size-3.5 text-muted-foreground group-hover:text-primary transition-colors" strokeWidth={1.75} />
+   266→            <span className="size-1.5 rounded-[2px] bg-signal-green pulse-dot" />
+   267→            <span className="ml-auto font-mono text-[9px] text-muted-foreground tnum">{m.metric}</span>
+   268→            <ArrowUpRight className="size-3 text-muted-foreground/0 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
+   269→          </div>
+   270→          <div className="mt-2 text-[11px] font-medium text-foreground leading-tight">{m.name}</div>
+   271→          <div className="mt-1.5">
+   272→            <Sparkline data={m.spark} color={CHART.cyan} width={120} height={18} area={false} />
+   273→          </div>
+   274→        </button>
+   275→      ))}
+   276→    </div>
+   277→  );
+   278→}
+   279→
+   280→/* ---------------- Main screen ---------------- */
+   281→
+   282→export function OverviewScreen() {
+   283→  const { filters, go, setRange } = useApp();
+   284→  const ready = useRefresh("overview");
+   285→
+   286→  const kpis = useMemo(() => getKpis(filters), [filters]);
+   287→  const series = useMemo(() => getVolumeSeries(filters), [filters]);
+   288→  /* 30-day corpus heat strip — always 30d context regardless of active range */
+   289→  const heatDays = useMemo<HeatDay[]>(
+   290→    () => getVolumeSeries({ ...filters, range: "30d" }).map((p) => ({ t: p.t, total: p.total, spike: p.spike, label: p.label })),
+   291→    [filters]
+   292→  );
+   293→  const onHeatDay = (day: HeatDay) => {
+   294→    setRange("30d");
+   295→    go("trends");
+   296→    toast(`Corpus view: ${day.label}`, {
+   297→      description: `${fmtFull(day.total)} posts on that day — 30-day window loaded in Trend Explorer.`,
+   298→    });
+   299→  };
+   300→  const topics = useMemo(
+   301→    () =>
+   302→      effectiveTopics(filters)
+   303→        .map((t) => ({ ...t, spark: getTopicSeries(t.topic, filters).map((p) => p.total) }))
+   304→        .sort((a, b) => b.topic.change24h - a.topic.change24h)
+   305→        .slice(0, 7),
+   306→    [filters]
+   307→  );
+   308→  const chartTheme = useChartTheme();
+   309→
+   310→  if (!ready) {
+   311→    return (
+   312→      <div className="space-y-4 animate-in fade-in duration-200">
+   313→        <KpiRowSkeleton />
+   314→        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   315→          <PanelSkeleton className="xl:col-span-8" height="h-72" />
+   316→          <PanelSkeleton className="xl:col-span-4" height="h-72" />
+   317→        </div>
+   318→        <PanelSkeleton height="h-48" />
+   319→      </div>
+   320→    );
+   321→  }
+   322→
+   323→  const windowLabel = WINDOW_LABEL[filters.range] ?? "window";
+   324→  const sentimentToneOfKpi = sentimentTone(kpis.avgSentiment);
+   325→
+   326→  return (
+   327→    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+   328→      <ScreenHeader
+   329→        kicker="MODULE 01 // INTELLIGENCE FUSION"
+   330→        title="Mission Control"
+   331→        description={`Unified signal picture across X and Telegram for the ${windowLabel} — volume, narratives, influence, bot activity and misinformation risk in a single operating view.`}
+   332→        right={
+   333→          <div className="flex items-center gap-2">
+   334→            <Badge tone="cyan" dot>
+   335→              {filters.platform === "all" ? "X + Telegram" : filters.platform === "x" ? "X only" : "Telegram only"}
+   336→            </Badge>
+   337→            <Badge tone={sentimentToneOfKpi} dot>
+   338→              net {fmtNet(kpis.avgSentiment)}
+   339→            </Badge>
+   340→            <Button
+   341→              variant="outline"
+   342→              size="sm"
+   343→              className="h-7 text-[11px] gap-1.5"
+   344→              onClick={() => {
+   345→                toast("Fusion snapshot queued", {
+   346→                  description: "Intelligence summary attached to the daily briefing (mock).",
+   347→                });
+   348→              }}
+   349→            >
+   350→              <Layers className="size-3.5" /> Snapshot
+   351→            </Button>
+   352→          </div>
+   353→        }
+   354→      />
+   355→
+   356→      {/* KPI row */}
+   357→      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+   358→        <KpiCard
+   359→          label="Posts tracked"
+   360→          value={fmtCompact(kpis.postsTracked)}
+   361→          icon={MessageSquare}
+   362→          tone="cyan"
+   363→          delta={12.4}
+   364→          spark={series.map((p) => p.total)}
+   365→          sparkColor={CHART.cyan}
+   366→          footnote={
+   367→            <>
+   368→              <span className="text-signal-cyan">X {Math.round(kpis.xShare * 100)}%</span>
+   369→              <span className="text-border">/</span>
+   370→              <span className="text-signal-green">TG {Math.round(kpis.telegramShare * 100)}%</span>
+   371→            </>
+   372→          }
+   373→        />
+   374→        <KpiCard
+   375→          label="Active narratives"
+   376→          value={String(kpis.activeNarratives)}
+   377→          icon={GitBranch}
+   378→          tone="orange"
+   379→          delta={8.1}
+   380→          spark={series.map((p) => Math.max(1, Math.round(p.total / 900)))}
+   381→          sparkColor={CHART.orange}
+   382→          footnote={<span>3 emerging · 2 coordinated</span>}
+   383→        />
+   384→        <KpiCard
+   385→          label="Avg sentiment"
+   386→          value={fmtNet(kpis.avgSentiment)}
+   387→          icon={HeartPulse}
+   388→          tone={sentimentToneOfKpi === "green" ? "green" : sentimentToneOfKpi === "red" ? "red" : "amber"}
+   389→          delta={Number((kpis.sentimentDelta * 100).toFixed(1))}
+   390→          deltaSuffix=""
+   391→          spark={series.map((p) => (p.positive - p.negative) / Math.max(1, p.total))}
+   392→          sparkColor={sentimentToneOfKpi === "red" ? CHART.red : CHART.green}
+   393→          footnote={<span>scale −1.00 … +1.00</span>}
+   394→        />
+   395→        <KpiCard
+   396→          label="High-risk alerts"
+   397→          value={String(kpis.highRiskAlerts)}
+   398→          icon={ShieldAlert}
+   399→          tone="red"
+   400→          invertDelta
+   401→          delta={25}
+   402→          spark={[2, 3, 2, 4, 3, 5, 4, 6, 5, 4]}
+   403→          sparkColor={CHART.red}
+   404→          footnote={<span className="text-signal-red">2 critical · 2 high</span>}
+   405→        />
+   406→      </div>
+   407→
+   408→      {/* 30-day corpus intensity strip */}
+   409→      <Panel
+   410→        title="Corpus intensity"
+   411→        icon={Cpu}
+   412→        sub="30-day daily volume · reflects filter bank"
+   413→        right={
+   414→          <span className="font-mono text-[10px] text-muted-foreground/70 hidden sm:inline">
+   415→            click a day → trend explorer
+   416→          </span>
+   417→        }
+   418→      >
+   419→        <HeatCalendar days={heatDays} onSelect={onHeatDay} />
+   420→      </Panel>
+   421→
+   422→      {/* Volume × sentiment band + live alerts */}
+   423→      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   424→        <Panel
+   425→          className="xl:col-span-8"
+   426→          title="Conversation volume · sentiment composition"
+   427→          icon={Flame}
+   428→          sub={windowLabel}
+   429→          right={
+   430→            <Legend
+   431→              items={[
+   432→                { label: "Positive", color: CHART.green },
+   433→                { label: "Neutral", color: "#64748B" },
+   434→                { label: "Negative", color: CHART.red },
+   435→                { label: "Baseline", color: CHART.cyan, dashed: true },
+   436→                { label: "Spike", color: CHART.amber },
+   437→              ]}
+   438→            />
+   439→          }
+   440→        >
+   441→          <div className="h-64 md:h-72 -mx-1">
+   442→            <ResponsiveContainer width="100%" height="100%">
+   443→              <AreaChart data={series} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+   444→                <defs>
+   445→                  <linearGradient id="ovPos" x1="0" y1="0" x2="0" y2="1">
+   446→                    <stop offset="0%" stopColor={CHART.green} stopOpacity={0.55} />
+   447→                    <stop offset="100%" stopColor={CHART.green} stopOpacity={0.28} />
+   448→                  </linearGradient>
+   449→                  <linearGradient id="ovNeu" x1="0" y1="0" x2="0" y2="1">
+   450→                    <stop offset="0%" stopColor="#64748B" stopOpacity={0.4} />
+   451→                    <stop offset="100%" stopColor="#64748B" stopOpacity={0.22} />
+   452→                  </linearGradient>
+   453→                  <linearGradient id="ovNeg" x1="0" y1="0" x2="0" y2="1">
+   454→                    <stop offset="0%" stopColor={CHART.red} stopOpacity={0.6} />
+   455→                    <stop offset="100%" stopColor={CHART.red} stopOpacity={0.34} />
+   456→                  </linearGradient>
+   457→                </defs>
+   458→                <CartesianGrid stroke={chartTheme.grid} strokeDasharray={GRID.strokeDasharray} vertical={GRID.vertical} />
+   459→                <XAxis
+   460→                  dataKey="t"
+   461→                  type="number"
+   462→                  domain={["dataMin", "dataMax"]}
+   463→                  tickFormatter={(t: number) => {
+   464→                    const p = series.find((s) => s.t === t);
+   465→                    return p?.label ?? "";
+   466→                  }}
+   467→                  minTickGap={filters.range === "30d" ? 24 : filters.range === "7d" ? 36 : 48}
+   468→                  tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   469→                  axisLine={{ stroke: chartTheme.grid }}
+   470→                  tickLine={false}
+   471→                />
+   472→                <YAxis
+   473→                  tickFormatter={(v: number) => fmtCompact(v)}
+   474→                  width={44}
+   475→                  tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   476→                  axisLine={false}
+   477→                  tickLine={false}
+   478→                />
+   479→                <Tooltip
+   480→                  cursor={{ stroke: chartTheme.crosshair, strokeDasharray: "4 4" }}
+   481→                  content={(props) => (
+   482→                    <ChartTooltip
+   483→                      {...props}
+   484→                      label={
+   485→                        (() => {
+   486→                          const p = series.find((s) => s.t === (props as { payload?: { t?: number } }).payload?.t);
+   487→                          return p?.label ?? "";
+   488→                        })()
+   489→                      }
+   490→                      labelExtra={
+   491→                        (props as { payload?: { spike?: boolean } }).payload?.spike ? (
+   492→                          <Badge tone="amber">spike</Badge>
+   493→                        ) : null
+   494→                      }
+   495→                    />
+   496→                  )}
+   497→                />
+   498→                <Area
+   499→                  dataKey="positive"
+   500→                  name="Positive"
+   501→                  stackId="s"
+   502→                  stroke={CHART.green}
+   503→                  strokeWidth={0}
+   504→                  fill="url(#ovPos)"
+   505→                />
+   506→                <Area
+   507→                  dataKey="neutral"
+   508→                  name="Neutral"
+   509→                  stackId="s"
+   510→                  stroke="#64748B"
+   511→                  strokeWidth={0}
+   512→                  fill="url(#ovNeu)"
+   513→                />
+   514→                <Area
+   515→                  dataKey="negative"
+   516→                  name="Negative"
+   517→                  stackId="s"
+   518→                  stroke={CHART.red}
+   519→                  strokeWidth={0}
+   520→                  fill="url(#ovNeg)"
+   521→                />
+   522→                {series
+   523→                  .filter((p) => p.spike)
+   524→                  .map((p) => (
+   525→                    <ReferenceDot
+   526→                      key={p.t}
+   527→                      x={p.t}
+   528→                      y={p.total}
+   529→                      r={4}
+   530→                      fill={CHART.amber}
+   531→                      stroke="#0A0E14"
+   532→                      strokeWidth={1}
+   533→                    />
+   534→                  ))}
+   535→              </AreaChart>
+   536→            </ResponsiveContainer>
+   537→          </div>
+   538→          <div className="mt-3 grid grid-cols-3 gap-3 border-t border-border/60 pt-3">
+   539→            <div>
+   540→              <Taxonomy>Peak hour</Taxonomy>
+   541→              <div className="font-mono text-sm tnum text-foreground mt-0.5">
+   542→                {(() => {
+   543→                  const peak = series.reduce((a, b) => (b.total > a.total ? b : a), series[0]);
+   544→                  return peak ? `${peak.label} · ${fmtCompact(peak.total)}` : "—";
+   545→                })()}
+   546→              </div>
+   547→            </div>
+   548→            <div>
+   549→              <Taxonomy>Negative share</Taxonomy>
+   550→              <div className="font-mono text-sm tnum text-signal-red mt-0.5">
+   551→                {(() => {
+   552→                  const tot = series.reduce((a, p) => a + p.total, 0) || 1;
+   553→                  const neg = series.reduce((a, p) => a + p.negative, 0);
+   554→                  return `${((neg / tot) * 100).toFixed(1)}%`;
+   555→                })()}
+   556→              </div>
+   557→            </div>
+   558→            <div>
+   559→              <Taxonomy>Spikes flagged</Taxonomy>
+   560→              <div
+   561→                className={cn(
+   562→                  "font-mono text-sm tnum mt-0.5",
+   563→                  series.filter((p) => p.spike).length > 0 ? "text-signal-amber" : "text-muted-foreground"
+   564→                )}
+   565→              >
+   566→                {series.filter((p) => p.spike).length > 0
+   567→                  ? `${series.filter((p) => p.spike).length} vs baseline`
+   568→                  : "none · nominal"}
+   569→              </div>
+   570→            </div>
+   571→          </div>
+   572→        </Panel>
+   573→
+   574→        <div className="xl:col-span-4 min-w-0">
+   575→          <LiveAlertFeed />
+   576→        </div>
+   577→      </div>
+   578→
+   579→      {/* Trending narratives + network preview */}
+   580→      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   581→        <Panel
+   582→          className="xl:col-span-7"
+   583→          title="Top trending narratives"
+   584→          icon={Flame}
+   585→          sub={`24h Δ · ${windowLabel}`}
+   586→          bodyClassName="p-0"
+   587→          right={
+   588→            <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => go("trends")}>
+   589→              Trend explorer <ArrowUpRight className="size-3" />
+   590→            </Button>
+   591→          }
+   592→        >
+   593→          <div className="overflow-x-auto">
+   594→            <table className="w-full text-left">
+   595→              <thead>
+   596→                <tr className="border-b border-border">
+   597→                  {["Narrative", "Volume", "24h Δ", "Sentiment", "Risk", "Trend"].map((h) => (
+   598→                    <th key={h} className="taxonomy text-muted-foreground/70 font-semibold px-4 py-2 whitespace-nowrap">
+   599→                      {h}
+   600→                    </th>
+   601→                  ))}
+   602→                </tr>
+   603→              </thead>
+   604→              <tbody>
+   605→                {topics.map(({ topic, spark }) => {
+   606→                  const dom =
+   607→                    topic.sentiment.positive > topic.sentiment.negative
+   608→                      ? topic.sentiment.positive > topic.sentiment.neutral
+   609→                        ? "positive"
+   610→                        : "neutral"
+   611→                      : topic.sentiment.negative > topic.sentiment.neutral
+   612→                        ? "negative"
+   613→                        : "neutral";
+   614→                  return (
+   615→                    <tr
+   616→                      key={topic.id}
+   617→                      onClick={() => go("trends", { topicId: topic.id })}
+   618→                      className="border-b border-border/50 last:border-0 hover:bg-accent cursor-pointer transition-colors"
+   619→                    >
+   620→                      <td className="px-4 py-2.5">
+   621→                        <div className="flex items-center gap-2 min-w-0">
+   622→                          {topic.velocity === "surging" && <Flame className="size-3 text-signal-orange shrink-0" />}
+   623→                          <span className="text-xs font-medium text-foreground truncate max-w-40">{topic.label}</span>
+   624→                          {topic.emerging && <Badge tone="orange">emerging</Badge>}
+   625→                        </div>
+   626→                        <div className="text-[10px] text-muted-foreground truncate max-w-44 mt-0.5">{topic.gloss}</div>
+   627→                      </td>
+   628→                      <td className="px-4 py-2.5 font-mono text-xs tnum text-foreground whitespace-nowrap">
+   629→                        {fmtCompact(topic.baseVolume * 1.75)}
+   630→                      </td>
+   631→                      <td className="px-4 py-2.5 whitespace-nowrap">
+   632→                        <Delta value={topic.change24h} />
+   633→                      </td>
+   634→                      <td className="px-4 py-2.5">
+   635→                        <Badge tone={dom === "positive" ? "green" : dom === "negative" ? "red" : "slate"}>
+   636→                          {dom}
+   637→                        </Badge>
+   638→                      </td>
+   639→                      <td className="px-4 py-2.5 w-28">
+   640→                        <ScoreBar value={topic.risk} showValue />
+   641→                      </td>
+   642→                      <td className="px-4 py-2.5">
+   643→                        <Sparkline data={spark} color={CHART.orange} width={72} height={22} />
+   644→                      </td>
+   645→                    </tr>
+   646→                  );
+   647→                })}
+   648→              </tbody>
+   649→            </table>
+   650→          </div>
+   651→        </Panel>
+   652→
+   653→        <div className="xl:col-span-5 min-w-0">
+   654→          <NetworkPreview />
+   655→        </div>
+   656→      </div>
+   657→
+   658→      {/* Module pipeline */}
+   659→      <Panel title="Capability pipeline" icon={Cpu} sub="all modules nominal">
+   660→        <ModuleStrip />
+   661→      </Panel>
+   662→
+   663→      <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
+   664→        <Users className="size-3" />
+   665→        Source: aggregated public posts (X, Telegram) · anonymised cohorts · window {windowLabel} ·
+   666→        generated {relTime(NOW)} ago · prototype data
+   667→      </div>
+   668→    </div>
+   669→  );
+   670→}
+   671→
+   672→export { fmtSigned };
+   673→
