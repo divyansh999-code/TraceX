@@ -157,6 +157,22 @@
     background: color-mix(in srgb, var(--signal-orange) 30%, transparent);
     color: var(--foreground);
   }
+  /* Keyboard focus telemetry — visible on every interactive element */
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ring) 75%, transparent);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+  /* Numeric inputs: no native spinners (console posture) */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }
 
 /* ---- Telemetry-grade scrollbars ---- */
@@ -257,4 +273,34 @@
 /* ---- Recharts tooltip wrapper ---- */
 .recharts-default-tooltip {
   display: none !important;
+}
+
+/* ---- Recharts active dot: telemetry pulse ---- */
+.recharts-active-dot circle {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--signal-cyan) 60%, transparent));
+}
+
+/* ---- Console aliveness: panel hairline lift on hover ---- */
+section.bg-card {
+  transition: border-color 150ms ease;
+}
+section.bg-card:hover {
+  border-color: color-mix(in srgb, var(--border) 65%, var(--muted-foreground));
+}
+
+/* ---- Reduced motion: calm the console for motion-sensitive operators ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .pulse-dot,
+  .edge-flow,
+  .scanline {
+    animation: none !important;
+  }
 }

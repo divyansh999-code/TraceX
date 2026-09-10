@@ -313,13 +313,16 @@ function ClaimDossier({ claim }: { claim: Claim }) {
 /* ------------------------------------------------------------------ */
 
 export function MisinfoScreen() {
-  const { filters } = useApp();
+  const { filters, selectedClaimId, setSelectedClaimId } = useApp();
   const ready = useRefresh("misinfo");
 
   const claims = useMemo(() => getClaims(filters), [filters]);
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /* dossier selection lives in the global bus so the ⌘K palette and
+     deep-links (#/misinfo/claim:CLM-004) can open a dossier directly. */
+  const selectedId = selectedClaimId;
+  const setSelectedId = setSelectedClaimId;
 
   const sorted = useMemo(() => [...claims].sort((a, b) => b.risk - a.risk), [claims]);
   const riskTest = RISK_FILTERS.find((f) => f.id === riskFilter)?.test ?? (() => true);

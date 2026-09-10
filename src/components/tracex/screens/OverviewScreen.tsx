@@ -18,7 +18,7 @@ import {
   NOW,
   type IntelligenceAlert,
 } from "@/lib/mock";
-import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned } from "@/lib/fmt";
+import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned, fmtFull } from "@/lib/fmt";
 import { cn } from "@/lib/utils";
 import { Panel, Badge, Delta, ScoreBar, SeverityDot, LiveDot, Legend, Taxonomy } from "../common/primitives";
 import { KpiCard } from "../common/KpiCard";
@@ -26,6 +26,7 @@ import { Sparkline } from "../common/Sparkline";
 import { ScreenHeader } from "../common/ScreenHeader";
 import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
 import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
+import { HeatCalendar, type HeatDay } from "../common/HeatCalendar";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -54,6 +55,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import type { ScreenId } from "@/lib/mock/types";
 
 const WINDOW_LABEL: Record<string, string> = {
   "24h": "last 24 hours",
@@ -283,35 +285,40 @@ function NetworkPreview() {
 
 /* ---------------- Module pipeline strip ---------------- */
 
-const MODULES = [
-  { icon: Database, name: "API Ingestion", metric: "12.4k/min", spark: [8, 9, 11, 10, 12, 13, 12, 14, 13, 15] },
-  { icon: Fingerprint, name: "Demographics", metric: "k≥50", spark: [5, 6, 5, 7, 6, 6, 7, 6, 7, 7] },
-  { icon: HeartPulse, name: "Sentiment", metric: "7 langs", spark: [4, 5, 6, 5, 6, 7, 6, 7, 8, 7] },
-  { icon: Flame, name: "Trend Detection", metric: "z>2.5", spark: [3, 5, 4, 6, 8, 7, 9, 11, 10, 12] },
-  { icon: Bot, name: "Bot Detection", metric: "5k sample", spark: [2, 3, 2, 4, 3, 5, 4, 6, 5, 6] },
-  { icon: Share2, name: "Network Analysis", metric: "90 nodes", spark: [6, 6, 7, 7, 8, 8, 9, 8, 9, 10] },
-  { icon: ShieldAlert, name: "Misinformation", metric: "10 claims", spark: [4, 5, 7, 6, 8, 9, 8, 10, 11, 12] },
-  { icon: Layers, name: "Intelligence Fusion", metric: "this view", spark: [7, 8, 8, 9, 10, 9, 10, 11, 12, 13] },
+const MODULES: { icon: typeof Database; name: string; metric: string; spark: number[]; screen: ScreenId }[] = [
+  { icon: Database, name: "API Ingestion", metric: "12.4k/min", spark: [8, 9, 11, 10, 12, 13, 12, 14, 13, 15], screen: "overview" },
+  { icon: Fingerprint, name: "Demographics", metric: "k≥50", spark: [5, 6, 5, 7, 6, 6, 7, 6, 7, 7], screen: "demographics" },
+  { icon: HeartPulse, name: "Sentiment", metric: "7 langs", spark: [4, 5, 6, 5, 6, 7, 6, 7, 8, 7], screen: "sentiment" },
+  { icon: Flame, name: "Trend Detection", metric: "z>2.5", spark: [3, 5, 4, 6, 8, 7, 9, 11, 10, 12], screen: "trends" },
+  { icon: Bot, name: "Bot Detection", metric: "5k sample", spark: [2, 3, 2, 4, 3, 5, 4, 6, 5, 6], screen: "bots" },
+  { icon: Share2, name: "Network Analysis", metric: "90 nodes", spark: [6, 6, 7, 7, 8, 8, 9, 8, 9, 10], screen: "network" },
+  { icon: ShieldAlert, name: "Misinformation", metric: "10 claims", spark: [4, 5, 7, 6, 8, 9, 8, 10, 11, 12], screen: "misinfo" },
+  { icon: Layers, name: "Intelligence Fusion", metric: "this view", spark: [7, 8, 8, 9, 10, 9, 10, 11, 12, 13], screen: "overview" },
 ];
 
 function ModuleStrip() {
+  const { go } = useApp();
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
       {MODULES.map((m) => (
-        <div
+        <button
           key={m.name}
-          className="bg-card border border-border rounded-lg p-3 hover:border-muted-foreground/30 transition-colors"
+          type="button"
+          onClick={() => go(m.screen)}
+          title={`Open the ${m.screen} module — pipeline stage: ${m.name.toLowerCase()}`}
+          className="group text-left bg-card border border-border rounded-lg p-3 hover:border-primary/50 hover:bg-accent/40 transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-2">
-            <m.icon className="size-3.5 text-muted-foreground" strokeWidth={1.75} />
+            <m.icon className="size-3.5 text-muted-foreground group-hover:text-primary transition-colors" strokeWidth={1.75} />
             <span className="size-1.5 rounded-[2px] bg-signal-green pulse-dot" />
             <span className="ml-auto font-mono text-[9px] text-muted-foreground tnum">{m.metric}</span>
+            <ArrowUpRight className="size-3 text-muted-foreground/0 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
           </div>
           <div className="mt-2 text-[11px] font-medium text-foreground leading-tight">{m.name}</div>
           <div className="mt-1.5">
             <Sparkline data={m.spark} color={CHART.cyan} width={120} height={18} area={false} />
           </div>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -320,11 +327,23 @@ function ModuleStrip() {
 /* ---------------- Main screen ---------------- */
 
 export function OverviewScreen() {
-  const { filters, go } = useApp();
+  const { filters, go, setRange } = useApp();
   const ready = useRefresh("overview");
 
   const kpis = useMemo(() => getKpis(filters), [filters]);
   const series = useMemo(() => getVolumeSeries(filters), [filters]);
+  /* 30-day corpus heat strip — always 30d context regardless of active range */
+  const heatDays = useMemo<HeatDay[]>(
+    () => getVolumeSeries({ ...filters, range: "30d" }).map((p) => ({ t: p.t, total: p.total, spike: p.spike, label: p.label })),
+    [filters]
+  );
+  const onHeatDay = (day: HeatDay) => {
+    setRange("30d");
+    go("trends");
+    toast(`Corpus view: ${day.label}`, {
+      description: `${fmtFull(day.total)} posts on that day — 30-day window loaded in Trend Explorer.`,
+    });
+  };
   const topics = useMemo(
     () =>
       effectiveTopics(filters)
@@ -432,6 +451,20 @@ export function OverviewScreen() {
           footnote={<span className="text-signal-red">2 critical · 2 high</span>}
         />
       </div>
+
+      {/* 30-day corpus intensity strip */}
+      <Panel
+        title="Corpus intensity"
+        icon={Cpu}
+        sub="30-day daily volume · reflects filter bank"
+        right={
+          <span className="font-mono text-[10px] text-muted-foreground/70 hidden sm:inline">
+            click a day → trend explorer
+          </span>
+        }
+      >
+        <HeatCalendar days={heatDays} onSelect={onHeatDay} />
+      </Panel>
 
       {/* Volume × sentiment band + live alerts */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">

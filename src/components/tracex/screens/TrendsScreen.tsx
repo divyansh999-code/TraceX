@@ -54,7 +54,10 @@ import {
   Sparkles,
   ArrowUpRight,
   Users,
+  Download,
 } from "lucide-react";
+import { toast } from "sonner";
+import { downloadCsv, csvStamp } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -713,7 +716,34 @@ export function TrendsScreen() {
                 className="h-7 rounded-sm pl-8 text-xs"
               />
             </div>
-            <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2.5 text-[11px] gap-1.5 shrink-0"
+              title="Export the visible keyword table as CSV"
+              onClick={() => {
+                downloadCsv(
+                  `tracex-keywords-${csvStamp()}.csv`,
+                  ["keyword", "category", "velocity", "volume", "change_24h_pct", "risk", "x_share", "watched"],
+                  filteredRows.map((r) => [
+                    r.topic.label,
+                    r.topic.category,
+                    r.topic.velocity,
+                    Math.round(r.volume),
+                    r.topic.change24h.toFixed(1),
+                    r.topic.risk.toFixed(2),
+                    Math.round(r.topic.xShare * 100) + "%",
+                    watchlist.includes(r.topic.id) ? "yes" : "no",
+                  ])
+                );
+                toast("Keyword table exported", {
+                  description: `${filteredRows.length} narratives → CSV (current filter bank).`,
+                });
+              }}
+            >
+              <Download className="size-3.5" /> CSV
+            </Button>
+            <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground shrink-0 hidden sm:inline">
               click a row to drill down
             </span>
           </div>

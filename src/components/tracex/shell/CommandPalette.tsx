@@ -159,7 +159,7 @@ export function CommandPalette() {
                 key={c.id}
                 value={`${c.text} ${c.translation ?? ""} ${c.status} ${c.id}`}
                 onSelect={() => {
-                  go("misinfo");
+                  go("misinfo", { claimId: c.id });
                   setOpen(false);
                   toast(`Dossier ${c.id} opened`, { description: c.text.slice(0, 90) + "…" });
                 }}

@@ -11,6 +11,7 @@ import { Sidebar } from "./shell/Sidebar";
 import { TopBar } from "./shell/TopBar";
 import { StatusBar } from "./shell/StatusBar";
 import { BootSplash } from "./shell/BootSplash";
+import { HotkeyHelp } from "./shell/HotkeyHelp";
 import { OverviewScreen } from "./screens/OverviewScreen";
 import { TrendsScreen } from "./screens/TrendsScreen";
 import { SentimentScreen } from "./screens/SentimentScreen";
@@ -123,6 +124,7 @@ function Console() {
         <MobileNav />
         <main className="flex-1 px-4 py-5 min-w-0 w-full">
           <ModuleHotkeys />
+          <HotkeyHelp />
           <ModuleCanvas />
         </main>
         <StatusBar />

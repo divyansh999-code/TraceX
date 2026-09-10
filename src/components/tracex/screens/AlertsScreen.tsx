@@ -17,6 +17,7 @@ import {
 } from "@/lib/mock";
 import { DEFAULT_RULES } from "@/lib/mock/content";
 import { fmtDateIST, relTime } from "@/lib/fmt";
+import { downloadCsv, csvStamp } from "@/lib/csv";
 import { Panel, Badge, Chip, LiveDot, MonoTag, SeverityDot, Taxonomy, type Tone } from "../common/primitives";
 import { KpiCard } from "../common/KpiCard";
 import { ScreenHeader } from "../common/ScreenHeader";
@@ -139,9 +140,38 @@ function AlertHistory({
       sub="triage log"
       bodyClassName="p-0"
       right={
-        <span className="font-mono text-[10px] tnum text-muted-foreground">
-          {visible.length}/{alerts.length}
-        </span>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-[10px] gap-1"
+            title="Export the visible triage log as CSV"
+            onClick={() => {
+              downloadCsv(
+                `tracex-alerts-${csvStamp()}.csv`,
+                ["id", "severity", "type", "title", "topic", "timestamp", "status", "detail"],
+                visible.map((a) => [
+                  a.id,
+                  a.severity,
+                  a.type,
+                  a.title,
+                  a.topicLabel ?? "",
+                  new Date(a.t).toISOString(),
+                  a.status,
+                  a.detail,
+                ])
+              );
+              toast("Triage log exported", {
+                description: `${visible.length} alerts → CSV (current filters).`,
+              });
+            }}
+          >
+            <Download className="size-3" /> CSV
+          </Button>
+          <span className="font-mono text-[10px] tnum text-muted-foreground">
+            {visible.length}/{alerts.length}
+          </span>
+        </div>
       }
     >
       {/* filter chips */}

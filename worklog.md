@@ -194,3 +194,43 @@ Work Log:
 Stage Summary:
 - All features working, console clean after fresh reload (earlier errors were stale HMR buffers).
 - Nice-to-haves for next round: persist watchlist to localStorage; palette action to jump directly to claim dossier selection; romanized alias search for Hindi claim text; sparkline in ModuleStrip clickable to respective screens.
+
+---
+Task ID: 7 (webDevReview round 2)
+Agent: main (orchestrator, cron-triggered)
+Task: Full QA sweep + feature round: session persistence, deep-linking, alert bell, hotkey help, CSV export, corpus heat calendar, clickable pipeline strip, styling polish
+
+Work Log:
+- Read worklog; assessed project state: dev server healthy (all 200s), lint 0/0, tsc 0 app errors.
+- agent-browser QA sweep BEFORE changes: all 8 screens render (hotkey nav), palette open/filter/romanized-search ("kisan" → किसान आंदोलन), watchlist sidebar sync, report modal open/close, platform filter data change (ALL 52M / X 38M / TG 14M / restore 52M), theme toggle both directions, trends drill-down sheet, network node click → account inspector. ZERO console errors → project judged stable → feature round prioritized.
+- NEW: Session persistence + URL hash deep-linking (src/lib/app-state.tsx rewrite):
+  - localStorage key `tracex.console.v1` stores {filters, watchlist}; validated + merged with defaults on load (corrupt-store safe, SSR-guarded via module-level `typeof window` check — no hydration mismatch since BootSplash gates first paint).
+  - `#/screen`, `#/trends/topic-id`, `#/misinfo/claim:CLM-XXXX` hash format; write-only effect (replaceState — no history spam, no setState in effect so lint-clean); hash overrides stored position on load.
+  - `selectedClaimId` added to global bus; `go()` accepts `{topicId?, claimId?}`.
+- NEW: Palette claim entries now jump straight to the dossier (go("misinfo", {claimId})) — MisinfoScreen selection moved from local useState to app-state (alias vars keep the rest of the file untouched).
+- NEW: CSV export (src/lib/csv.ts — downloadCsv + csvStamp, RFC-style escaping, Blob + objectURL):
+  - Trends keyword table toolbar "CSV" button (8 columns incl. velocity/risk/x-share/watched).
+  - Alerts history panel "CSV" button (severity/type/topic/timestamp/status/detail).
+  - Both fire sonner toasts with row counts.
+- NEW: AlertsBell (src/components/tracex/shell/AlertsBell.tsx) — TopBar bell with red unread badge (New + critical/high count), popover feed (10 most recent, severity dots, type badges, relTime), row click → implicated module via linkScreen, "Mark all read" + "Triage console →" footer. Opening the popover marks visible alerts read.
+- NEW: HotkeyHelp (src/components/tracex/shell/HotkeyHelp.tsx) — "?" (or Shift+/) opens a shortcuts dialog: Console / Module switching (1–8) / Analyst gestures groups, built on new Kbd primitives.
+- NEW: Kbd primitives (src/components/tracex/common/Kbd.tsx) — KbdKey key-caps (border-b-2 inset shadow, mono), Kbd rows, HintStrip for StatusBar (⌘K palette · 1–8 modules · ? shortcuts).
+- NEW: HeatCalendar (src/components/tracex/common/HeatCalendar.tsx) — 30-day corpus intensity strip on Overview ("Corpus intensity" panel between KPI row and main chart): cyan color-mix opacity scale by daily volume vs window max, red ring + corner dot on spike days, hover readout (date · posts · SPIKE), avg/anomaly footer, click a day → setRange("30d") + go("trends") + toast. Always queries 30d context regardless of active range, respects filter bank.
+- NEW: ModuleStrip pipeline cards are now buttons — each navigates to its module (Ingestion→overview, Demographics→demographics, Sentiment→sentiment, Trend Detection→trends, Bot Detection→bots, Network→network, Misinformation→misinfo, Fusion→overview); hover shows primary border + ArrowUpRight affordance, icon tints primary.
+- STYLING: globals.css — visible :focus-visible ring (ring color 75%), native number-input spinners removed, recharts active-dot cyan drop-shadow glow, panel hover border lift (section.bg-card), prefers-reduced-motion guards (kills pulse-dot/edge-flow/scanline + all animations). StatusBar version → v0.10.0, kbd HintStrip added.
+- VERIFICATION (all via agent-browser, fresh reloads):
+  - Reload with `#/misinfo/claim:CLM-2041` → misinfo + UPI dossier restored. localStorage snapshot verified (filters range=30d carried over, watchlist 2 defaults).
+  - Watchlist star toggle → localStorage update; reload → #KollywoodRelease still in sidebar (then unstarred to restore defaults).
+  - Palette "convenience fee" → Enter → misinfo dossier CLM-2041 + hash `#/misinfo/claim:CLM-2041`.
+  - Bell: popover 12 rows, badge "3", row click navigates + closes.
+  - Heat calendar: 30 cells dark AND light; day click (06 Sept, 12,86,987 posts en-IN formatted) → trends + 30D range active.
+  - ModuleStrip: Bot Detection card → bots screen. "?" → help dialog (38 lines) → Esc closes.
+  - CSV buttons on both screens → "exported" toasts.
+  - Full 8-screen regression sweep: all OK, zero console errors. Light mode verified with all new features.
+  - Final: lint 0/0, tsc --noEmit 0 app errors, dev.log all 200s.
+
+Stage Summary:
+- TraceX v0.10.0: 8 new features + polish layer on a stable base. Console state now survives refresh and is deep-link shareable (`#/misinfo/claim:CLM-2041`) — strong hackathon demo properties.
+- Files added: src/lib/csv.ts, src/components/tracex/shell/AlertsBell.tsx, src/components/tracex/shell/HotkeyHelp.tsx, src/components/tracex/common/Kbd.tsx, src/components/tracex/common/HeatCalendar.tsx.
+- Files changed: src/lib/app-state.tsx (persistence/hash/claimId), MisinfoScreen (app-state selection), CommandPalette (claim jump), TrendsScreen + AlertsScreen (CSV buttons), OverviewScreen (heat panel + clickable strip), TopBar (bell), StatusBar (hints + version), TraceXApp (HotkeyHelp mount), globals.css (focus/motion/panel polish).
+- Remaining ideas for next round: browser back/forward hashchange sync (currently replaceState only); heat calendar keyboard arrow navigation; CSV export on more tables (bots, influencers); claim auto-scroll highlight when opened via palette; per-topic heat calendar in drill-down sheet; sound/flash option on critical alerts (SOC vibe).
