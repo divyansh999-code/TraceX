@@ -325,3 +325,36 @@ Work Log:
 
 Stage Summary:
 - Palette precision materially improved for the demo (type a word, get the thing) with zero regressions on romanized narrative search. Files changed: src/components/ui/command.tsx (additive filter prop), src/components/tracex/shell/CommandPalette.tsx (tokenFilter + value prefix "tour").
+
+---
+Task ID: 11 (webDevReview round 6)
+Agent: main (orchestrator, cron-triggered)
+Task: QA sweep + v0.14 feature round — narrative A/B compare, briefing archive, replay speed control + keyboard seek, methodology deep-links, tour time-machine step
+
+Work Log:
+- Read worklog; assessed state: dev server healthy (all 200s), v0.13.0 stable.
+- Pre-change QA sweep (agent-browser): all 8 screens via hotkeys — ZERO console errors; replay playback + go-live regression; deep-link #/misinfo/claim:CLM-2041 restore; palette "kisan" romanized search + strict token filter intact.
+- NEW FEATURE 1 — Narrative A/B compare (Trends):
+  - New `modals/CompareDialog.tsx`: identity strip (A vs B with orange/cyan identity dots), overlaid dual-line velocity ComposedChart (orange A / cyan B, shared time axis), 7-row metric table (window volume, 24h change, net sentiment with tone, sentiment mix bars, X share, velocity badges, risk ScoreBars) with a centred "Lead" column naming the winning narrative per metric (risk inverted — "lower = safer"), emerging flags strip, and Drill-down A/B buttons that hand off to the existing per-topic sheet.
+  - TrendsScreen: compare pin button per keyword row (GitCompareArrows, primary-tinted when pinned) beside the watchlist star; toolbar "N/2 pinned" chip with clear ✕ + disabled-until-2 "A/B" button; header column widened to w-14 with dual icons; third-pin toast; pins survive filter re-query (topic-id keyed, not row-index).
+  - BUG FOUND + FIXED during QA: two pins landing in the same event task hit a stale closure — the second setCompareIds clobbered the first (verified via same-tick double click: "1/2 pinned"). Fixed with a functional-updater guard: `setCompareIds((prev) => (prev.includes(id) || prev.length >= 2 ? prev : [...prev, id]))` — closure guards keep the UX toast, the updater guarantees state correctness.
+- NEW FEATURE 2 — Briefing archive (report workflow loop):
+  - app-state: `ArchivedReport` type (JSON-safe findings with iconKey enum), `reports[]` + `archiveReport()` + `deleteReport()`; persisted in tracex.console.v1 (validated loader, max 12, newest first).
+  - ReportModal: "Archive" footer button snapshots the live brief (docId, window, platform, KPIs, findings with iconKey mapping) + success toast pointing to Alerts.
+  - New `modals/ArchivedReportDialog.tsx`: renders the snapshot in the same document-frame language (classification row, meta grid, numbered findings with reverse-mapped icons, bot-share ScoreBar, archive id) + Copy/Delete actions.
+  - AlertsScreen: "Briefing archive" panel (empty state with guidance, max-h-56 scroll list with date/findings/platform, row click → archived dialog, delete with toast). Verified: archive → panel row → open dialog → RELOAD persistence → delete → empty state.
+- NEW FEATURE 3 — Replay speed control + keyboard seek (v0.13 polish):
+  - TimeMachine: 0.5×/1×/2× segmented speed control (title shows sweep duration), keyboard seek via input onKeyDown (←/→ step, Home start, End → live) with preventDefault so the native change (which pauses) doesn't double-fire — seeking KEEPS playback running and the timer resumes from the new position.
+  - OverviewScreen: `speed` state, stepMs divided by speed; scrub strip gains "←/→ seek · End → live" hint; onCursor now a keep-playing setter (drag-seek still pauses via TimeMachine's onSeek wrapper).
+  - Verified: 1× (step 8 @2s) → switch 2× mid-playback (step 21 @4s); ←×3 during playback (step 9→6→ continues to 12, Pause still active).
+- NEW FEATURE 4 — Methodology deep-links: each four-questions card gains an "Open module →" ghost button (WHAT→trends, WHO→network, WHERE→demographics, HOW→sentiment) that closes the dialog and navigates. Verified: WHAT link → dialog closed + #/trends.
+- FEATURE 5 — Guided tour step 8-of-8: new "Temporal replay — the time machine" step spotlighting [data-tour=time-machine] between Fusion KPIs and the live feed; final card now mentions A/B compare pins and archivable briefings. Verified: walk to step 6/8 → spotlight on the scrubber; finish writes flag.
+- STYLING: compare dialog document language matches ReportModal; table header w-14 + dual-icon legend cell; pinned rows get primary-tinted pins; StatusBar → v0.14.0.
+- VERIFICATION (agent-browser): A/B — pin two rows (2/2 chip, button enabled) → dialog (2 Lines, Lead cells, 2 drill buttons) → Drill down B → dialog closes + sheet opens; archive — modal Archive → Alerts row → archived dialog (findings + Copy/Delete) → reload persistence → delete → empty state; methodology deep-link; tour 8 steps incl. time-machine spotlight; 8-screen hotkey regression ZERO console errors; light mode screenshots (trends with pins + overview with speed control); VLM review attempted — service still 401 (environment), DOM assertions used instead.
+- Final gates: bun run lint 0/0; bunx tsc --noEmit 0 app errors; dev.log all 200s.
+
+Stage Summary:
+- TraceX v0.14.0: analysts can now A/B two narratives (velocity overlay + metric-by-metric lead indicators), archive generated briefings into a persistent local archive (the report workflow is a loop), scrub the temporal replay at 0.5/1/2× with keyboard seeking that never interrupts playback, and jump from the methodology briefing straight into the relevant module.
+- Files added: src/components/tracex/modals/CompareDialog.tsx, src/components/tracex/modals/ArchivedReportDialog.tsx.
+- Files changed: app-state.tsx (reports archive + persistence), TrendsScreen.tsx (compare pins + toolbar + dialog mount + stale-closure fix), ReportModal.tsx (Archive button + iconKeyOf), AlertsScreen.tsx (Briefing archive panel), MethodologyDialog.tsx (deep-links), GuidedTour.tsx (time-machine step + closing-card copy), TimeMachine.tsx (speed control + keyboard seek), OverviewScreen.tsx (speed state + keep-playing onCursor + hint), StatusBar.tsx (v0.14.0).
+- Remaining ideas for next round: A/B compare could get a third "winner" summary sentence auto-computed from the lead cells; palette entry "compare {A} vs {B}" for pinned pairs; archive rows could show filter chips (platform/range) + CSV export of archived findings; tour could pause the live alert feed during the time-machine step; VLM visual review still pending service availability.

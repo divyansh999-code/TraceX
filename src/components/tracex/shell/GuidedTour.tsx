@@ -87,7 +87,20 @@ const STEPS: TourStep[] = [
     body: (
       <p>
         Volume, active narratives, aggregate sentiment and high-risk alerts — recomputed live from the
-        filtered corpus. Try the temporal replay scrubber beneath the main chart to rewind 30 days.
+        filtered corpus.
+      </p>
+    ),
+  },
+  {
+    title: "Temporal replay — the time machine",
+    target: '[data-tour="time-machine"]',
+    screen: "overview",
+    body: (
+      <p>
+        Drag the playhead or hit <span className="font-mono text-foreground">▶</span> to rewind the corpus:
+        the chart, KPIs, trending table and heat strip all re-derive <span className="text-foreground">as
+        of</span> any point in the window, with the upcoming window ghosted ahead. Keys{" "}
+        <span className="font-mono text-foreground">←/→</span> seek while playing.
       </p>
     ),
   },
@@ -107,9 +120,9 @@ const STEPS: TourStep[] = [
     body: (
       <>
         <p>
-          <span className="font-mono text-foreground">⌘K</span> opens the command palette,{" "}
-          <span className="font-mono text-foreground">?</span> lists every shortcut, and the report modal
-          packages findings for briefing.
+          <span className="font-mono text-foreground">⌘K</span> opens the command palette (pin two narratives
+          for an A/B compare in Trends), <span className="font-mono text-foreground">?</span> lists every
+          shortcut, and generated briefings can be archived for later.
         </p>
         <p className="text-muted-foreground">Good hunting, analyst.</p>
       </>

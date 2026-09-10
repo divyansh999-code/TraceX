@@ -6,7 +6,7 @@
  * classification, meta grid, auto-computed key findings, mini visuals.
  */
 import { useMemo } from "react";
-import { useApp } from "@/lib/app-state";
+import { useApp, type ArchivedReport } from "@/lib/app-state";
 import { getBots, getClaims, getKpis, getVolumeSeries, TOPICS, NOW } from "@/lib/mock";
 import { fmtCompact, fmtDateIST, fmtFull, fmtNet, fmtSigned } from "@/lib/fmt";
 import { Badge, ScoreBar, Taxonomy } from "../common/primitives";
@@ -22,7 +22,15 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Bot, Copy, FileDown, HeartPulse, ShieldAlert, TrendingUp, type LucideIcon } from "lucide-react";
+import { Bot, Copy, FileDown, HeartPulse, ShieldAlert, TrendingUp, Archive, type LucideIcon } from "lucide-react";
+
+/** findings icon → JSON-safe archive key (reverse-mapped on render) */
+function iconKeyOf(icon: LucideIcon): ArchivedReport["findings"][number]["iconKey"] {
+  if (icon === TrendingUp) return "trend";
+  if (icon === ShieldAlert) return "claim";
+  if (icon === Bot) return "bot";
+  return "sentiment";
+}
 
 const WINDOW_LABEL: Record<string, string> = {
   "24h": "last 24 hours",
@@ -39,7 +47,7 @@ interface Finding {
 }
 
 export function ReportModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { filters } = useApp();
+  const { filters, archiveReport } = useApp();
 
   const kpis = useMemo(() => getKpis(filters), [filters]);
   const series = useMemo(() => getVolumeSeries(filters), [filters]);
@@ -134,6 +142,28 @@ export function ReportModal({ open, onOpenChange }: { open: boolean; onOpenChang
 
   const exportPdf = () => {
     toast("PDF export queued — prototype", { description: `${docId} will appear in Analyst reports (mock pipeline).` });
+  };
+
+  /* snapshot the current brief into the persisted archive (v0.14) —
+     reopenable from the Alerts module "Briefing archive" panel */
+  const archiveBriefing = () => {
+    archiveReport({
+      docId,
+      windowLabel,
+      platformLabel,
+      postsTracked: kpis.postsTracked,
+      netSentiment: kpis.avgSentiment,
+      botShare: kpis.botShare,
+      findings: findings.map((f) => ({
+        iconKey: iconKeyOf(f.icon),
+        label: f.label,
+        value: f.value,
+        tone: f.tone,
+      })),
+    });
+    toast.success("Briefing archived", {
+      description: `${docId} · ${windowLabel} — reopen from Alerts & Reports → Briefing archive.`,
+    });
   };
 
   return (
@@ -248,6 +278,9 @@ export function ReportModal({ open, onOpenChange }: { open: boolean; onOpenChang
           </Button>
           <Button variant="outline" onClick={copySummary}>
             <Copy className="size-3.5" /> Copy summary
+          </Button>
+          <Button variant="outline" onClick={archiveBriefing}>
+            <Archive className="size-3.5" /> Archive
           </Button>
           <Button onClick={exportPdf}>
             <FileDown className="size-3.5" /> Export PDF

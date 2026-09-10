@@ -27,6 +27,11 @@
  * v0.13 additions:
  * - `methodologyOpen` — the provenance briefing dialog, global like the
  *   report modal (palette / cheatsheet / status bar can open it).
+ *
+ * v0.14 additions:
+ * - Briefing archive: generated reports persist (localStorage) and can
+ *   be reopened from the Alerts module — the report workflow is now a
+ *   loop rather than a one-shot modal.
  */
 import {
   createContext,
@@ -56,6 +61,20 @@ interface ClaimNote {
   updatedAt: number;
 }
 
+/** An archived intelligence briefing (v0.14). Icon keys map back to
+ *  lucide icons in the archive renderer — snapshots stay JSON-safe. */
+export interface ArchivedReport {
+  id: string;
+  docId: string;
+  createdAt: number;
+  windowLabel: string;
+  platformLabel: string;
+  postsTracked: number;
+  netSentiment: number;
+  botShare: number;
+  findings: { iconKey: "trend" | "claim" | "bot" | "sentiment"; label: string; value: string; tone: string }[];
+}
+
 interface AppState {
   filters: Filters;
   setPlatform: (p: Platform) => void;
@@ -80,6 +99,11 @@ interface AppState {
   /** Global methodology / provenance briefing (mounted at shell level). */
   methodologyOpen: boolean;
   setMethodologyOpen: (open: boolean) => void;
+
+  /** Briefing archive — generated reports, persisted (v0.14). */
+  reports: ArchivedReport[];
+  archiveReport: (report: Omit<ArchivedReport, "id" | "createdAt">) => string;
+  deleteReport: (id: string) => void;
 
   /** Starred narratives — persisted across sessions. */
   watchlist: string[];
@@ -139,6 +163,7 @@ interface PersistedSnapshot {
   watchlist: string[];
   savedViews?: SavedView[];
   claimNotes?: Record<string, ClaimNote>;
+  reports?: ArchivedReport[];
 }
 
 const VALID_SCREENS = new Set<string>(SCREEN_IDS);
@@ -180,7 +205,18 @@ function loadPersisted(): PersistedSnapshot | null {
         }
       }
     }
-    return { filters, watchlist, savedViews, claimNotes };
+    const reports = Array.isArray(data.reports)
+      ? data.reports.filter(
+          (r): r is ArchivedReport =>
+            !!r &&
+            typeof r.id === "string" &&
+            typeof r.docId === "string" &&
+            Number.isFinite(r.createdAt) &&
+            Array.isArray(r.findings) &&
+            r.findings.every((f) => f && typeof f.label === "string" && typeof f.value === "string")
+        )
+      : [];
+    return { filters, watchlist, savedViews, claimNotes, reports };
   } catch {
     return null;
   }
@@ -218,6 +254,7 @@ const INITIAL = (() => {
       watchlist: DEFAULT_WATCHLIST,
       savedViews: [] as SavedView[],
       claimNotes: {} as Record<string, ClaimNote>,
+      reports: [] as ArchivedReport[],
       screen: "overview" as ScreenId,
       topicId: null as string | null,
       claimId: null as string | null,
@@ -230,6 +267,7 @@ const INITIAL = (() => {
     watchlist: persisted?.watchlist ?? DEFAULT_WATCHLIST,
     savedViews: persisted?.savedViews ?? [],
     claimNotes: persisted?.claimNotes ?? {},
+    reports: persisted?.reports ?? [],
     screen: hash?.screen ?? "overview",
     topicId: (hash?.topicId ?? null) as string | null,
     claimId: (hash?.claimId ?? null) as string | null,
@@ -251,6 +289,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [watchlist, setWatchlist] = useState<string[]>(INITIAL.watchlist);
   const [savedViews, setSavedViews] = useState<SavedView[]>(INITIAL.savedViews);
   const [claimNotes, setClaimNotes] = useState<Record<string, ClaimNote>>(INITIAL.claimNotes);
+  const [reports, setReports] = useState<ArchivedReport[]>(INITIAL.reports);
   const [reportOpen, setReportOpen] = useState(false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -300,12 +339,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     firstHashWriteRef.current = false;
     try {
-      const snap: PersistedSnapshot = { filters, watchlist, savedViews, claimNotes };
+      const snap: PersistedSnapshot = { filters, watchlist, savedViews, claimNotes, reports };
       window.localStorage.setItem(STORE_KEY, JSON.stringify(snap));
     } catch {
       /* private mode / quota — persistence is best-effort */
     }
-  }, [screen, selectedTopicId, selectedClaimId, filters, watchlist, savedViews, claimNotes]);
+  }, [screen, selectedTopicId, selectedClaimId, filters, watchlist, savedViews, claimNotes, reports]);
 
   /* Browser Back/Forward + manual hash edits: restore console state from
    * the target hash. setState lives in the event handler (not an effect),
@@ -457,6 +496,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /* ---- briefing archive (v0.14) ---- */
+  const archiveReport = useCallback((report: Omit<ArchivedReport, "id" | "createdAt">) => {
+    const id = `rpt-${Date.now().toString(36)}`;
+    const full: ArchivedReport = { ...report, id, createdAt: Date.now() };
+    setReports((prev) => [full, ...prev].slice(0, 12));
+    return id;
+  }, []);
+
+  const deleteReport = useCallback((id: string) => {
+    setReports((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
   /* ---- alert feed bus ---- */
   const alertsFeed = useMemo(() => {
     const base = getAlerts().sort((a, b) => b.t - a.t);
@@ -507,6 +558,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isViewActive,
       claimNotes,
       setClaimNote,
+      reports,
+      archiveReport,
+      deleteReport,
       alertsFeed,
       alertUnread,
       markAlertsRead,
@@ -536,6 +590,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isViewActive,
       claimNotes,
       setClaimNote,
+      reports,
+      archiveReport,
+      deleteReport,
       alertsFeed,
       alertUnread,
       markAlertsRead,

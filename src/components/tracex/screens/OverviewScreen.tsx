@@ -318,8 +318,9 @@ export function OverviewScreen() {
      ALL setState happens inside the async tick callback — lint-clean. */
   const [cursorIdx, setCursorIdx] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
 
-  const stepMs = Math.max(120, Math.round(14_000 / Math.max(2, series.length)));
+  const stepMs = Math.max(120, Math.round(14_000 / Math.max(2, series.length) / speed));
   useEffect(() => {
     if (!playing || series.length < 2) return;
     const cur = cursorIdx ?? series.length - 1;
@@ -334,6 +335,10 @@ export function OverviewScreen() {
     }, stepMs);
     return () => clearTimeout(id);
   }, [playing, cursorIdx, series.length, stepMs]);
+
+  /* keyboard seek keeps playing: TimeMachine calls onCursor directly
+     (no onPlaying(false)) — the timer picks up from the new position */
+  const onSeekKeepPlay = (i: number | null) => setCursorIdx(i);
 
   const isLive = cursorIdx == null;
   const effCursor = Math.min(cursorIdx ?? series.length - 1, series.length - 1);
@@ -382,11 +387,6 @@ export function OverviewScreen() {
       ),
     [series, effCursor]
   );
-
-  const onReplayCursor = (i: number | null) => {
-    setPlaying(false);
-    setCursorIdx(i);
-  };
 
   /* trending rows during replay: only narratives that have actually
      emerged by the playhead, ranked by their as-of growth rate, with
@@ -685,15 +685,22 @@ export function OverviewScreen() {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-3 border-t border-border/60 pt-3">
-            <Taxonomy>Temporal replay</Taxonomy>
+          <div className="mt-3 border-t border-border/60 pt-3" data-tour="time-machine">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Taxonomy>Temporal replay</Taxonomy>
+              <span className="font-mono text-[9px] text-muted-foreground/60 hidden md:inline">
+                ←/→ seek · End → live
+              </span>
+            </div>
             <div className="mt-2">
               <TimeMachine
                 points={series}
                 cursor={cursorIdx}
-                onCursor={onReplayCursor}
+                onCursor={onSeekKeepPlay}
                 playing={playing}
                 onPlaying={setPlaying}
+                speed={speed}
+                onSpeed={setSpeed}
               />
             </div>
           </div>

@@ -41,7 +41,11 @@ import {
   ShieldAlert,
   X,
   Zap,
+  Archive,
+  Trash2,
 } from "lucide-react";
+import { ArchivedReportDialog } from "../modals/ArchivedReportDialog";
+import type { ArchivedReport } from "@/lib/app-state";
 
 const WINDOW_LABEL: Record<string, string> = {
   "24h": "last 24 hours",
@@ -362,6 +366,72 @@ function ReportsPanel({ onGenerate }: { onGenerate: () => void }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Briefing archive (v0.14) — persisted report snapshots              */
+/* ------------------------------------------------------------------ */
+
+function BriefingArchive() {
+  const { reports, deleteReport } = useApp();
+  const [openReport, setOpenReport] = useState<ArchivedReport | null>(null);
+
+  return (
+    <Panel
+      title="Briefing archive"
+      icon={Archive}
+      sub={reports.length > 0 ? `${reports.length} archived · persists locally` : "no archived briefings"}
+      bodyClassName="p-0"
+    >
+      {reports.length === 0 ? (
+        <div className="px-4 py-6 text-center">
+          <Archive className="size-6 text-muted-foreground/40 mx-auto" strokeWidth={1.5} />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Generate a report, then hit <span className="text-foreground font-medium">Archive</span> — the brief
+            lands here and survives refresh.
+          </p>
+        </div>
+      ) : (
+        <div className="max-h-56 overflow-y-auto divide-y divide-border/60">
+          {reports.map((r) => (
+            <div
+              key={r.id}
+              className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-accent/60 transition-colors group"
+            >
+              <FileText className="size-3.5 text-muted-foreground shrink-0" strokeWidth={1.75} />
+              <button
+                type="button"
+                onClick={() => setOpenReport(r)}
+                className="min-w-0 flex-1 text-left cursor-pointer"
+                title={`Open briefing DOC ${r.docId}`}
+              >
+                <div className="text-xs text-foreground truncate group-hover:text-primary transition-colors">
+                  {r.docId} · {r.windowLabel}
+                </div>
+                <div className="font-mono text-[10px] tnum text-muted-foreground/70 truncate">
+                  {fmtDateIST(r.createdAt)} · {r.findings.length} findings · {r.platformLabel}
+                </div>
+              </button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-muted-foreground hover:text-signal-red"
+                aria-label={`Delete ${r.docId}`}
+                title="Remove from archive"
+                onClick={() => {
+                  deleteReport(r.id);
+                  toast(`DOC ${r.docId} removed from the archive`);
+                }}
+              >
+                <Trash2 className="size-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <ArchivedReportDialog report={openReport} onClose={() => setOpenReport(null)} onDelete={deleteReport} />
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Alert rule builder                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -640,6 +710,7 @@ export function AlertsScreen() {
         </div>
         <div className="xl:col-span-4 min-w-0 space-y-4">
           <ReportsPanel onGenerate={() => setReportOpen(true)} />
+          <BriefingArchive />
           <RuleBuilder />
         </div>
       </div>

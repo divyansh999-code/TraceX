@@ -1,16 +1,17 @@
 "use client";
 
 /**
- * Time machine — temporal replay scrubber (v0.13).
+ * Time machine — temporal replay scrubber (v0.13, speed control v0.14).
  *
  * Lets an analyst "rewind the corpus": the playhead slices every Overview
  * artefact (chart, KPIs, trending table, heat strip) to an as-of position,
  * while a dimmed ghost line previews the still-upcoming window. Play runs
  * an automated ~14s sweep across the active range — a strong live-demo
- * gesture ("watch the last 30 days unfold").
+ * gesture ("watch the last 30 days unfold"). v0.14: 0.5×/1×/2× playback
+ * speed + arrow-key seeking that keeps playback running.
  *
  * Purely presentational: playback timing lives in the host screen (one
- * interval, setState only inside the tick callback — lint-clean).
+ * timer, setState only inside the tick callback — lint-clean).
  */
 import { useMemo } from "react";
 import { Play, Pause, SkipBack, History } from "lucide-react";
@@ -24,12 +25,16 @@ export interface TimeMachinePoint {
   spike: boolean;
 }
 
+const SPEEDS = [0.5, 1, 2] as const;
+
 export function TimeMachine({
   points,
   cursor,
   onCursor,
   playing,
   onPlaying,
+  speed = 1,
+  onSpeed,
 }: {
   points: TimeMachinePoint[];
   /** null = live (full window). Otherwise index into points. */
@@ -37,6 +42,9 @@ export function TimeMachine({
   onCursor: (i: number | null) => void;
   playing: boolean;
   onPlaying: (p: boolean) => void;
+  /** Playback speed multiplier (v0.14) — the host divides its base step. */
+  speed?: number;
+  onSpeed?: (s: number) => void;
 }) {
   const max = Math.max(0, points.length - 1);
   const isLive = cursor == null;
@@ -65,6 +73,19 @@ export function TimeMachine({
     const i = Math.max(0, Math.min(max, v));
     onCursor(i >= max ? null : i);
     onPlaying(false);
+  };
+
+  /* keyboard seeking KEEPS playback running (v0.14) — preventDefault so
+     the native range value change / onChange doesn't also fire + pause */
+  const onTrackKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    let next: number | null = null;
+    if (e.key === "ArrowRight") next = Math.min(max, pos + 1);
+    else if (e.key === "ArrowLeft") next = Math.max(0, pos - 1);
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = null; // jump to live
+    if (next === null && e.key !== "End") return;
+    e.preventDefault();
+    onCursor(next);
   };
 
   return (
@@ -146,11 +167,39 @@ export function TimeMachine({
           step={1}
           value={pos}
           onChange={(e) => onSeek(parseInt(e.target.value, 10))}
+          onKeyDown={onTrackKey}
           aria-label="Temporal playback position"
           aria-valuetext={isLive ? "Live — full window" : `As of ${here?.label ?? ""}`}
           className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize"
         />
       </div>
+
+      {/* playback speed (v0.14) */}
+      {onSpeed && (
+        <div
+          role="group"
+          aria-label="Playback speed"
+          className="hidden sm:inline-flex items-center bg-background border border-border rounded-md p-0.5 gap-0.5 shrink-0"
+        >
+          {SPEEDS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onSpeed(s)}
+              aria-pressed={speed === s}
+              title={s === 1 ? "Standard sweep (~14s)" : s < 1 ? "Slow sweep (~28s)" : "Fast sweep (~7s)"}
+              className={cn(
+                "h-5 px-1.5 rounded-sm text-[10px] font-mono tnum transition-colors cursor-pointer",
+                speed === s
+                  ? "bg-secondary text-foreground border border-border"
+                  : "text-muted-foreground hover:text-foreground border border-transparent"
+              )}
+            >
+              {s}×
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* live toggle */}
       <button

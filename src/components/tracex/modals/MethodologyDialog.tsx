@@ -11,6 +11,7 @@
  * over any screen.
  */
 import { useApp } from "@/lib/app-state";
+import type { ScreenId } from "@/lib/mock/types";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Badge } from "../common/primitives";
 import { ScoreBar } from "../common/primitives";
 import {
@@ -34,6 +36,7 @@ import {
   EyeOff,
   Users,
   FlaskConical,
+  ArrowUpRight,
 } from "lucide-react";
 
 const PIPELINE = [
@@ -64,30 +67,34 @@ const PIPELINE = [
   },
 ];
 
-const QUESTIONS = [
+const QUESTIONS: { icon: typeof TrendingUp; q: string; a: string; mod: string; goTo?: ScreenId }[] = [
   {
     icon: TrendingUp,
     q: "WHAT",
     a: "is gaining velocity — z-scored narrative detection surfaces emerging stories hours before keyword dashboards.",
     mod: "02 · Trends",
+    goTo: "trends",
   },
   {
     icon: Network,
     q: "WHO",
     a: "amplifies it — PageRank over the reply/mention/repost graph, plus bot-probability for inorganic accounts.",
     mod: "05 · Network / 06 · Bots",
+    goTo: "network",
   },
   {
     icon: Radar,
     q: "WHERE",
     a: "it spreads — cross-platform propagation tracing (X ↔ Telegram bridges) and cohort-level geography.",
     mod: "04 · Demographics",
+    goTo: "demographics",
   },
   {
     icon: HeartPulse,
     q: "HOW",
     a: "sentiment shifts — positive/neutral/negative composition over time with flip attribution to narratives.",
     mod: "03 · Sentiment",
+    goTo: "sentiment",
   },
 ];
 
@@ -115,7 +122,7 @@ const PRIVACY = [
 ];
 
 export function MethodologyDialog() {
-  const { methodologyOpen, setMethodologyOpen } = useApp();
+  const { methodologyOpen, setMethodologyOpen, go } = useApp();
 
   return (
     <Dialog open={methodologyOpen} onOpenChange={setMethodologyOpen}>
@@ -167,6 +174,19 @@ export function MethodologyDialog() {
                     </Badge>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed mt-1.5">{item.a}</p>
+                  {item.goTo && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary"
+                      onClick={() => {
+                        setMethodologyOpen(false);
+                        go(item.goTo!);
+                      }}
+                    >
+                      Open module <ArrowUpRight className="size-3" />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

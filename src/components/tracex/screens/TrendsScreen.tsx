@@ -56,8 +56,10 @@ import {
   ArrowUpRight,
   Users,
   Download,
+  GitCompareArrows,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CompareDialog } from "../modals/CompareDialog";
 import { downloadCsv, csvStamp } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -381,6 +383,28 @@ export function TrendsScreen() {
   const [kw, setKw] = useState("");
   /* local sheet state — opens on mount when arriving with a topic, then via selectTopic */
   const [sheetOpen, setSheetOpen] = useState(() => selectedTopicId != null);
+  /* A/B compare picks (v0.14) — max two, then the dialog opens */
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const toggleCompare = (id: string) => {
+    if (compareIds.includes(id)) {
+      setCompareIds(compareIds.filter((x) => x !== id));
+      return;
+    }
+    if (compareIds.length >= 2) {
+      toast("A/B holds two narratives", { description: "Unpin one of the pinned rows first." });
+      return;
+    }
+    /* functional updater guard: stays correct even if two pins land in the
+       same event task (stale closure) — the second append can't clobber */
+    setCompareIds((prev) => (prev.includes(id) || prev.length >= 2 ? prev : [...prev, id]));
+  };
+  const compareTopics = useMemo(() => {
+    const [ida, idb] = compareIds;
+    const ta = ida ? getTopicById(ida) : null;
+    const tb = idb ? getTopicById(idb) : null;
+    return ta && tb ? ([ta, tb] as [Topic, Topic]) : null;
+  }, [compareIds]);
   const selectTopic = (id: string) => {
     setSelectedTopicId(id);
     setSheetOpen(true);
@@ -759,6 +783,31 @@ export function TrendsScreen() {
                 className="h-7 rounded-sm pl-8 text-xs"
               />
             </div>
+            {compareIds.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-sm border border-primary/40 bg-primary/10 text-[10px] font-mono text-primary shrink-0">
+                <GitCompareArrows className="size-3" />
+                {compareIds.length}/2 pinned
+                <button
+                  type="button"
+                  onClick={() => setCompareIds([])}
+                  className="ml-0.5 text-muted-foreground hover:text-signal-red cursor-pointer"
+                  aria-label="Clear compare pins"
+                  title="Clear compare pins"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2.5 text-[11px] gap-1.5 shrink-0"
+              disabled={compareIds.length !== 2}
+              title="Compare the two pinned narratives side-by-side"
+              onClick={() => setCompareOpen(true)}
+            >
+              <GitCompareArrows className="size-3.5" /> A/B
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -795,8 +844,13 @@ export function TrendsScreen() {
               <thead className="sticky top-0 bg-card z-10">
                 <tr className="border-b border-border">
                   {["", "Keyword / hashtag", "Category", "Volume", "24h Δ", "Platforms", "Risk"].map((h, i) => (
-                    <th key={i} className="taxonomy text-muted-foreground/70 font-semibold px-4 py-2 whitespace-nowrap w-8 first:w-8">
-                      {h === "" ? <Star className="size-2.5 text-muted-foreground/50" /> : h}
+                    <th key={i} className="taxonomy text-muted-foreground/70 font-semibold px-4 py-2 whitespace-nowrap first:w-14 first:px-2">
+                      {h === "" ? (
+                        <span className="flex items-center gap-0.5 pl-1.5" title="Watchlist · A/B compare pins">
+                          <Star className="size-2.5 text-muted-foreground/50" />
+                          <GitCompareArrows className="size-2.5 text-muted-foreground/50" />
+                        </span>
+                      ) : h}
                     </th>
                   ))}
                 </tr>
@@ -810,21 +864,39 @@ export function TrendsScreen() {
                       onClick={() => selectTopic(topic.id)}
                       className="border-b border-border/50 last:border-0 hover:bg-accent cursor-pointer transition-colors"
                     >
-                      <td className="px-2 py-2.5 w-8" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => toggleWatchlist(topic.id)}
-                          className="size-5 rounded-sm flex items-center justify-center text-muted-foreground/50 hover:text-primary transition-colors cursor-pointer"
-                          title={watchlist.includes(topic.id) ? "Remove from watchlist" : "Add to watchlist"}
-                          aria-label={watchlist.includes(topic.id) ? "Unwatch narrative" : "Watch narrative"}
-                        >
-                          <Star
+                      <td className="px-2 py-2.5 w-14" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleWatchlist(topic.id)}
+                            className="size-5 rounded-sm flex items-center justify-center text-muted-foreground/50 hover:text-primary transition-colors cursor-pointer"
+                            title={watchlist.includes(topic.id) ? "Remove from watchlist" : "Add to watchlist"}
+                            aria-label={watchlist.includes(topic.id) ? "Unwatch narrative" : "Watch narrative"}
+                          >
+                            <Star
+                              className={cn(
+                                "size-3.5",
+                                watchlist.includes(topic.id) && "fill-primary text-primary"
+                              )}
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleCompare(topic.id)}
                             className={cn(
-                              "size-3.5",
-                              watchlist.includes(topic.id) && "fill-primary text-primary"
+                              "size-5 rounded-sm flex items-center justify-center transition-colors cursor-pointer",
+                              compareIds.includes(topic.id)
+                                ? "text-primary"
+                                : "text-muted-foreground/50 hover:text-foreground"
                             )}
-                          />
-                        </button>
+                            title={compareIds.includes(topic.id) ? "Unpin from A/B compare" : "Pin to A/B compare"}
+                            aria-label={compareIds.includes(topic.id) ? "Unpin from compare" : "Pin to compare"}
+                          >
+                            <GitCompareArrows
+                              className={cn("size-3.5", compareIds.includes(topic.id) && "stroke-[2.25]")}
+                            />
+                          </button>
+                        </div>
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2 min-w-0">
@@ -890,6 +962,18 @@ export function TrendsScreen() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* A/B narrative compare (v0.14) */}
+      <CompareDialog
+        open={compareOpen}
+        onOpenChange={setCompareOpen}
+        topics={compareTopics}
+        filters={filters}
+        onDrill={(id) => {
+          setCompareOpen(false);
+          selectTopic(id);
+        }}
+      />
 
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
         <Users className="size-3" />
