@@ -62,7 +62,7 @@ export function KpiCard({
     <div
       className={cn(
         "relative bg-card border border-border rounded-lg p-4 min-w-0 overflow-hidden",
-        "transition-colors duration-150 hover:border-muted-foreground/30",
+        "transition-all duration-150 hover:border-muted-foreground/40 hover:bg-accent/50",
         className
       )}
     >

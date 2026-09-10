@@ -101,10 +101,15 @@ export function getTopicSeries(topic: Topic, filters: Filters): VolumePoint[] {
       const dist = Math.abs(dayIndex - topic.spikeDay);
       spikeBoost *= 1 + (topic.emerging ? 3.4 : 2.2) * Math.exp(-Math.pow(dist, 2) / 2.2);
     }
-    if (cfg.kind !== "day" && topic.spikeHour !== null && filters.range === "24h") {
-      const hourIndex = cfg.points - 1 - i;
-      const dist = Math.abs(hourIndex - topic.spikeHour);
-      spikeBoost *= 1 + (topic.emerging ? 2.8 : 1.8) * Math.exp(-Math.pow(dist, 2) / 3);
+    if (cfg.kind !== "day" && topic.spikeHour !== null) {
+      // bucketed ranges (24h hourly, 7d 3h): map spike hour → bucket index
+      const hoursPerBucket = cfg.stepMs / 3.6e6;
+      const spikeBucket = Math.round(topic.spikeHour / hoursPerBucket);
+      const bucketIndex = cfg.points - 1 - i;
+      const dist = Math.abs(bucketIndex - (cfg.points - 1 - spikeBucket));
+      const width = filters.range === "24h" ? 3 : 2;
+      spikeBoost *=
+        1 + (topic.emerging ? (filters.range === "24h" ? 2.8 : 2.4) : 1.8) * Math.exp(-Math.pow(dist, 2) / width);
     }
 
     const noise = 1 + rng.gauss(0, 0.09);
@@ -122,6 +127,8 @@ export function getTopicSeries(topic: Topic, filters: Filters): VolumePoint[] {
     const neu = Math.max(0.02, 1 - pos - neg);
     const norm = pos + neg + neu;
 
+    // Spike detection: emerging topics flag more eagerly
+    const spikeThreshold = topic.emerging ? 1.55 : 2.1;
     points.push({
       t,
       label: pointLabel(t, cfg.kind),
@@ -132,7 +139,7 @@ export function getTopicSeries(topic: Topic, filters: Filters): VolumePoint[] {
       neutral: Math.round((total * neu) / norm),
       negative: Math.round((total * neg) / norm),
       baseline: Math.round(baseline),
-      spike: total > baseline * (topic.emerging ? 1.9 : 2.4),
+      spike: total > baseline * spikeThreshold,
     });
   }
   return points;
@@ -228,9 +235,9 @@ export function getKpis(filters: Filters): Kpis {
   };
 }
 
-/** Emotion mix for radar chart. */
+/** Emotion mix for radar chart — responsive to search query and platform. */
 export function getEmotions(filters: Filters): EmotionPoint[] {
-  const rng = rngFrom("emotions", filters.platform, filters.range, filters.languages.join(","));
+  const rng = rngFrom("emotions", filters.platform, filters.range, filters.languages.join(","), filters.query);
   const base: Record<string, number> = {
     Support: 34,
     Opposition: 27,
@@ -239,6 +246,26 @@ export function getEmotions(filters: Filters): EmotionPoint[] {
     Joy: 9,
     Curiosity: 5,
   };
+  // Query tilts the emotion mix: matched narratives' sentiment profiles bleed through
+  const q = filters.query.trim().toLowerCase();
+  if (q) {
+    const matched = TOPICS.filter((t) =>
+      `${t.label} ${t.gloss} ${t.category}`.toLowerCase().includes(q.replace(/^[#:]/, ""))
+    );
+    if (matched.length > 0) {
+      const negLean = matched.reduce((a, t) => a + t.sentiment.negative, 0) / matched.length;
+      const riskLean = matched.reduce((a, t) => a + t.risk, 0) / matched.length;
+      base.Opposition += riskLean * 14 + negLean * 10;
+      base.Anger += riskLean * 8;
+      base.Anxiety += negLean * 7 + riskLean * 4;
+      base.Support -= riskLean * 10 + negLean * 6;
+      base.Joy -= negLean * 5;
+    }
+  }
+  if (filters.platform === "telegram") {
+    base.Opposition += 3;
+    base.Curiosity += 1;
+  }
   return Object.entries(base).map(([emotion, value]) => ({
     emotion,
     value: Math.round(Math.min(60, Math.max(2, value + rng.gauss(0, 3)))),
@@ -277,18 +304,34 @@ export function getTopicSentimentTable(filters: Filters): TopicSentimentRow[] {
     .sort((a, b) => b.volume - a.volume);
 }
 
-/** Detected sharp sentiment flips within the window. */
+/** Detected sharp sentiment flips within the window, attributed to the topic driving them. */
 export function getSentimentShifts(filters: Filters): SentimentShiftEvent[] {
   const series = getVolumeSeries(filters);
   const events: SentimentShiftEvent[] = [];
   const netAt = (p: VolumePoint) => (p.positive - p.negative) / Math.max(1, p.total);
+  // Attribute each flip to the surviving topic with the largest sentiment swing at that index
+  const topics = effectiveTopics(filters);
   for (let i = 4; i < series.length; i += 2) {
     const before = netAt(series[i - 4]);
     const after = netAt(series[i]);
     if (Math.abs(after - before) > 0.16) {
+      let driver = "aggregate feed";
+      let bestSwing = 0.05;
+      for (const { topic } of topics.slice(0, 10)) {
+        const ts = getTopicSeries(topic, filters);
+        const a = ts[Math.min(i - 4, ts.length - 1)];
+        const b = ts[Math.min(i, ts.length - 1)];
+        if (!a || !b) continue;
+        const velocityWeight = 1 + Math.min(4, Math.abs(topic.change24h) / 100);
+        const swing = Math.abs(netAt(b) - netAt(a)) * velocityWeight;
+        if (swing > bestSwing) {
+          bestSwing = swing;
+          driver = topic.label;
+        }
+      }
       events.push({
         id: `SHF-${i}`,
-        topicLabel: "aggregate feed",
+        topicLabel: driver,
         from: before,
         to: after,
         windowLabel: `${series[i - 4].label} → ${series[i].label}`,

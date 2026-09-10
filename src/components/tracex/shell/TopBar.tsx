@@ -14,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Search, Moon, SunMedium, RotateCw, Send, CalendarClock, X as XIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { CommandPalette } from "./CommandPalette";
 import type { Platform, RangeKey, ScreenId } from "@/lib/mock/types";
 
 const SCREEN_META: Record<ScreenId, { code: string; label: string }> = {
@@ -191,6 +192,7 @@ export function TopBar() {
         </div>
 
         <div className="ml-auto flex items-center gap-3 shrink-0">
+          <CommandPalette />
           <LiveDot className="hidden xl:inline-flex" />
           <span className="hidden md:inline font-mono text-[11px] tnum text-muted-foreground tabular-nums">
             {now ? fmtClockIST(now) : "--:--:--"} IST

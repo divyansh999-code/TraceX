@@ -19,6 +19,7 @@ import {
   type IntelligenceAlert,
 } from "@/lib/mock";
 import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned } from "@/lib/fmt";
+import { cn } from "@/lib/utils";
 import { Panel, Badge, Delta, ScoreBar, SeverityDot, LiveDot, Legend, Taxonomy } from "../common/primitives";
 import { KpiCard } from "../common/KpiCard";
 import { Sparkline } from "../common/Sparkline";
@@ -159,7 +160,9 @@ function LiveAlertFeed() {
               >
                 {a.type}
               </Badge>
-              <span className="text-[11px] text-muted-foreground truncate">{a.detail}</span>
+              <span className="text-[11px] text-muted-foreground truncate" title={a.detail}>
+                {a.detail}
+              </span>
             </div>
           </button>
         ))}
@@ -475,7 +478,7 @@ export function OverviewScreen() {
                     const p = series.find((s) => s.t === t);
                     return p?.label ?? "";
                   }}
-                  minTickGap={48}
+                  minTickGap={filters.range === "30d" ? 24 : filters.range === "7d" ? 36 : 48}
                   tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                   axisLine={{ stroke: chartTheme.grid }}
                   tickLine={false}
@@ -568,8 +571,15 @@ export function OverviewScreen() {
             </div>
             <div>
               <Taxonomy>Spikes flagged</Taxonomy>
-              <div className="font-mono text-sm tnum text-signal-amber mt-0.5">
-                {series.filter((p) => p.spike).length} vs baseline
+              <div
+                className={cn(
+                  "font-mono text-sm tnum mt-0.5",
+                  series.filter((p) => p.spike).length > 0 ? "text-signal-amber" : "text-muted-foreground"
+                )}
+              >
+                {series.filter((p) => p.spike).length > 0
+                  ? `${series.filter((p) => p.spike).length} vs baseline`
+                  : "none · nominal"}
               </div>
             </div>
           </div>

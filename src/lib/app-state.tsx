@@ -29,6 +29,11 @@ interface AppState {
   selectedTopicId: string | null;
   setSelectedTopicId: (id: string | null) => void;
 
+  /** Starred narratives — persisted for the session. */
+  watchlist: string[];
+  toggleWatchlist: (topicId: string) => void;
+  isWatched: (topicId: string) => boolean;
+
   /** Bumped whenever filters change — screens use it as skeleton key. */
   refreshKey: number;
 }
@@ -47,6 +52,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [screen, setScreen] = useState<ScreenId>("overview");
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [watchlist, setWatchlist] = useState<string[]>(["kisan-andolan", "isro-mission"]);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
@@ -109,6 +115,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.scrollTo({ top: 0 });
   }, []);
 
+  const toggleWatchlist = useCallback((topicId: string) => {
+    setWatchlist((w) => (w.includes(topicId) ? w.filter((t) => t !== topicId) : [...w, topicId]));
+  }, []);
+
   const value = useMemo(
     () => ({
       filters,
@@ -123,6 +133,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       go,
       selectedTopicId,
       setSelectedTopicId,
+      watchlist,
+      toggleWatchlist,
+      isWatched: (topicId: string) => watchlist.includes(topicId),
       refreshKey,
     }),
     [
@@ -137,6 +150,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       screen,
       go,
       selectedTopicId,
+      watchlist,
+      toggleWatchlist,
       refreshKey,
     ]
   );

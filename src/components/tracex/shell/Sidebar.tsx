@@ -4,7 +4,10 @@
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/app-state";
 import { TraceXLogo } from "../common/TraceXLogo";
-import { getAlerts } from "@/lib/mock";
+import { Sparkline } from "../common/Sparkline";
+import { CHART } from "../common/ChartBits";
+import { getAlerts, getTopicById, getTopicSeries } from "@/lib/mock";
+import { fmtCompact } from "@/lib/fmt";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -16,6 +19,8 @@ import {
   BellRing,
   ShieldCheck,
   Activity,
+  Star,
+  Command,
 } from "lucide-react";
 import type { ScreenId } from "@/lib/mock/types";
 
@@ -36,7 +41,7 @@ const NAV: {
 ];
 
 export function Sidebar() {
-  const { screen, go } = useApp();
+  const { screen, go, filters, watchlist } = useApp();
   const newAlerts = getAlerts().filter((a) => a.status === "New").length;
 
   return (
@@ -91,6 +96,65 @@ export function Sidebar() {
           })}
         </ul>
       </nav>
+
+      {/* Watchlist — starred narratives */}
+      {watchlist.length > 0 && (
+        <div className="border-t border-sidebar-border py-3 px-2 shrink-0">
+          <div className="taxonomy text-muted-foreground/60 px-2 pb-2 flex items-center gap-1.5">
+            <Star className="size-2.5 text-primary" />
+            Watchlist
+            <span className="ml-auto font-mono text-[9px] tnum">{watchlist.length}</span>
+          </div>
+          <ul className="space-y-0.5">
+            {watchlist.slice(0, 5).map((id) => {
+              const topic = getTopicById(id);
+              if (!topic) return null;
+              const spark = getTopicSeries(topic, filters).map((p) => p.total);
+              return (
+                <li key={id}>
+                  <button
+                    type="button"
+                    onClick={() => go("trends", { topicId: id })}
+                    className="w-full flex items-center gap-2 px-2.5 h-9 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/60 transition-colors cursor-pointer group"
+                    title={topic.gloss}
+                  >
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-[2px] shrink-0",
+                        topic.risk >= 0.55
+                          ? "bg-signal-red"
+                          : topic.risk >= 0.35
+                            ? "bg-signal-amber"
+                            : "bg-signal-green"
+                      )}
+                    />
+                    <span className="truncate max-w-24">{topic.label}</span>
+                    <Sparkline
+                      data={spark}
+                      color={topic.risk >= 0.55 ? CHART.red : CHART.cyan}
+                      width={44}
+                      height={14}
+                      area={false}
+                      className="ml-auto opacity-70 group-hover:opacity-100"
+                    />
+                    <span className="font-mono text-[9px] tnum text-muted-foreground/70 w-8 text-right">
+                      {fmtCompact(topic.baseVolume * 1.75)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Hotkeys hint */}
+      <div className="border-t border-sidebar-border px-4 py-2.5 shrink-0 hidden lg:flex items-center gap-2 text-[9px] font-mono text-muted-foreground/50">
+        <Command className="size-2.5" />
+        <span>K palette</span>
+        <span className="mx-1 text-border">·</span>
+        <span>1–8 modules</span>
+      </div>
 
       {/* Pipeline status */}
       <div className="border-t border-sidebar-border p-3 space-y-2.5 shrink-0">

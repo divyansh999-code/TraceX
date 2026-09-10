@@ -49,6 +49,7 @@ import {
   Search,
   SearchX,
   Hash,
+  Star,
   Activity,
   Sparkles,
   ArrowUpRight,
@@ -135,6 +136,7 @@ function TopicDrill({
   onSelectTopic: (id: string) => void;
 }) {
   const chartTheme = useChartTheme();
+  const { watchlist, toggleWatchlist } = useApp();
   const posts = getSamplePosts(topic.id);
   const related = topic.relatedTopics
     .map((id) => getTopicById(id))
@@ -170,6 +172,17 @@ function TopicDrill({
           </SheetTitle>
           <Badge tone="slate">{topic.category}</Badge>
           {topic.emerging && <Badge tone="orange">emerging</Badge>}
+          <button
+            type="button"
+            onClick={() => toggleWatchlist(topic.id)}
+            className="ml-auto size-6 rounded-sm border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
+            title={watchlist.includes(topic.id) ? "Remove from watchlist" : "Add to watchlist"}
+            aria-label={watchlist.includes(topic.id) ? "Unwatch narrative" : "Watch narrative"}
+          >
+            <Star
+              className={cn("size-3.5", watchlist.includes(topic.id) && "fill-primary text-primary")}
+            />
+          </button>
         </div>
         <SheetDescription className="text-xs leading-relaxed">{topic.gloss}</SheetDescription>
       </SheetHeader>
@@ -316,7 +329,7 @@ function TopicDrill({
 /* ---------------- Main screen ---------------- */
 
 export function TrendsScreen() {
-  const { filters, go, selectedTopicId, setSelectedTopicId, resetFilters } = useApp();
+  const { filters, go, selectedTopicId, setSelectedTopicId, resetFilters, watchlist, toggleWatchlist } = useApp();
   const ready = useRefresh("trends");
   const chartTheme = useChartTheme();
   const [kw, setKw] = useState("");
@@ -708,9 +721,9 @@ export function TrendsScreen() {
             <table className="w-full text-left">
               <thead className="sticky top-0 bg-card z-10">
                 <tr className="border-b border-border">
-                  {["Keyword / hashtag", "Category", "Volume", "24h Δ", "Platforms", "Risk"].map((h) => (
-                    <th key={h} className="taxonomy text-muted-foreground/70 font-semibold px-4 py-2 whitespace-nowrap">
-                      {h}
+                  {["", "Keyword / hashtag", "Category", "Volume", "24h Δ", "Platforms", "Risk"].map((h, i) => (
+                    <th key={i} className="taxonomy text-muted-foreground/70 font-semibold px-4 py-2 whitespace-nowrap w-8 first:w-8">
+                      {h === "" ? <Star className="size-2.5 text-muted-foreground/50" /> : h}
                     </th>
                   ))}
                 </tr>
@@ -724,6 +737,22 @@ export function TrendsScreen() {
                       onClick={() => selectTopic(topic.id)}
                       className="border-b border-border/50 last:border-0 hover:bg-accent cursor-pointer transition-colors"
                     >
+                      <td className="px-2 py-2.5 w-8" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => toggleWatchlist(topic.id)}
+                          className="size-5 rounded-sm flex items-center justify-center text-muted-foreground/50 hover:text-primary transition-colors cursor-pointer"
+                          title={watchlist.includes(topic.id) ? "Remove from watchlist" : "Add to watchlist"}
+                          aria-label={watchlist.includes(topic.id) ? "Unwatch narrative" : "Watch narrative"}
+                        >
+                          <Star
+                            className={cn(
+                              "size-3.5",
+                              watchlist.includes(topic.id) && "fill-primary text-primary"
+                            )}
+                          />
+                        </button>
+                      </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2 min-w-0">
                           <meta.icon className={cn("size-3 shrink-0", meta.className)} strokeWidth={2} />
@@ -763,7 +792,7 @@ export function TrendsScreen() {
                 })}
                 {filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted-foreground">
+                    <td colSpan={7} className="px-4 py-6 text-center text-xs text-muted-foreground">
                       No tracked keywords match “{kw}”.
                     </td>
                   </tr>

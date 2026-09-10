@@ -4,7 +4,7 @@
  * TraceX application shell: sidebar spine + command bar + module canvas.
  * Boot splash gates first paint; module switching animates content.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppProvider, useApp } from "@/lib/app-state";
 import { Sidebar } from "./shell/Sidebar";
@@ -95,6 +95,25 @@ function MobileNav() {
   );
 }
 
+/** Global hotkeys: 1–8 switch modules. */
+function ModuleHotkeys() {
+  const { go } = useApp();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      const idx = parseInt(e.key, 10);
+      if (idx >= 1 && idx <= 8) {
+        go(MOBILE_NAV[idx - 1].id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go]);
+  return null;
+}
+
 function Console() {
   return (
     <div className="flex min-h-screen min-w-0">
@@ -103,6 +122,7 @@ function Console() {
         <TopBar />
         <MobileNav />
         <main className="flex-1 px-4 py-5 min-w-0 w-full">
+          <ModuleHotkeys />
           <ModuleCanvas />
         </main>
         <StatusBar />

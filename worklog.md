@@ -176,3 +176,21 @@ Work Log:
 
 Stage Summary:
 - Project ready for hackathon demo. See "Current project status" section above.
+
+---
+Task ID: 6 (webDevReview round 1)
+Agent: main (orchestrator, cron-triggered)
+Task: QA sweep + new features (⌘K palette, watchlist, hotkeys) + API gap fixes + styling polish
+
+Work Log:
+- QA sweep across all 8 screens via agent-browser: zero console errors; golden paths re-verified.
+- NEW FEATURE: CommandPalette (src/components/tracex/shell/CommandPalette.tsx) — ⌘K/Ctrl+K opens cmdk dialog: 8 modules, 16 narratives (with volume + watchlist stars), 8 claims (risk-coloured), 6 influencers (PR scores), filter-bank actions (platform X/TG/All, language toggles, reset, report, theme). Footer kbd-hint strip. Trigger button in TopBar; romanized topic ids added to search values for Devanagari matching.
+- NEW FEATURE: Narrative watchlist — app-state gained watchlist[] + toggleWatchlist/isWatched (defaults: kisan-andolan, isro-mission). Sidebar WATCHLIST section (risk dot, label, live sparkline, volume, click → trends drill-down). Star toggle column in Trends keyword table + star button in drill-down sheet header (stopPropagation; bidirectional sync verified).
+- NEW FEATURE: Keyboard shortcuts — 1–8 switch modules (input-guarded); hotkey hint row in sidebar.
+- API FIXES (src/lib/mock/series.ts): (1) spike injection now covers 7d 3h-buckets (bucketed spikeHour mapping + tuned thresholds 1.55/2.1) — Trends 7D now shows "3 vs baseline"; (2) getEmotions responds to search query (matched narratives' risk/negative lean tilts Opposition/Anger/Anxiety) + platform tilt; (3) getSentimentShifts attributes each flip to the topic with the largest velocity-weighted swing (topic labels verified in browser).
+- STYLING POLISH: Overview zero-spike state now muted "none · nominal" (was amber); alert feed rows carry full-detail title tooltips; XAxis minTickGap adaptive (30d=24, 7d=36); KpiCard hover adds tonal lift (bg-accent/50 + stronger border); OverviewScreen gained cn import; ChartBits TooltipEntry widened earlier (name/value unions) — tsc clean app-wide.
+- Verification: lint 0/0; tsc --noEmit 0 app errors; browser: palette open/filter/Enter → Trends + sheet opens; star toggle on/off synced with sidebar count; hotkeys 1–8 navigate; 7d spikes = 3; shift panel topic-attributed; VLM confirms watchlist + ⌘K render with no defects.
+
+Stage Summary:
+- All features working, console clean after fresh reload (earlier errors were stale HMR buffers).
+- Nice-to-haves for next round: persist watchlist to localStorage; palette action to jump directly to claim dossier selection; romanized alias search for Hindi claim text; sparkline in ModuleStrip clickable to respective screens.
