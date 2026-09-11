@@ -49,10 +49,11 @@ const SHORTCUTS: { group: string; items: Hotkey[] }[] = [
       { keys: ["←", "→"], label: "Browser Back / Forward — walk console history" },
       { keys: ["←", "→"], label: "Walk heat-calendar days once a cell is focused (Home/End jump to window edges)" },
       { keys: ["Tab"], label: "Focus the heat calendar, then Enter to open the day dossier (Overview) or pivot trends" },
-      { keys: ["A/B"], label: "Pin two narratives in the trends table, then compare — also reachable from ⌘K" },
+      { keys: ["A/B"], label: "Pin 2–6 narratives in the trends table, then compare — 2 opens the A/B dossier, 3+ the rank matrix" },
       { keys: ["▶"], label: "Overview temporal replay — scrub 30 days of corpus, KPIs and trends rewind with it" },
       { keys: ["⏎"], label: "While scrubbing — summon the day dossier for the playhead's calendar day" },
       { keys: ["⌘K"], label: "Type “compare <narrative> vs <narrative>” in the palette to arm the A/B pair" },
+      { keys: ["⌘K"], label: "Natural-language operators: “goto <module>”, “filter x 30d”, “watch <narrative>”" },
     ],
   },
 ];

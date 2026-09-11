@@ -37,8 +37,12 @@
  * - `dossierDay` — a globally-summoneable day dossier (epoch of the
  *   calendar day): the temporal replay, the ⌘K palette and the shareable
  *   `#/overview/day:TS` deep-link all open the same dialog.
- * - `setComparePair` — replace both A/B pins at once (day-dossier quick
- *   action + natural-language "compare A vs B" palette query).
+ * - `setComparePair` — replace both A/B pins at once (avoids the
+ *   two-toggle stale-closure class of bugs entirely).
+ *
+ * v0.17 additions:
+ * - Compare pins cap raised 2 → 6: the compare console renders an A/B
+ *   dossier for 2 pins and a rank-tinted metric matrix for 3–6 pins.
  */
 import {
   createContext,
@@ -124,8 +128,9 @@ interface AppState {
   deleteView: (id: string) => void;
   isViewActive: (view: SavedView) => boolean;
 
-  /** Narrative A/B compare pins (v0.15, lifted from TrendsScreen local
-   *  state so the ⌘K palette can reach them) — max two, persisted. */
+  /** Narrative compare pins (v0.15, lifted from TrendsScreen local
+   *  state so the ⌘K palette can reach them) — up to six (v0.17: 3–6 pins
+   *  switch the compare console into matrix mode), persisted. */
   compareIds: string[];
   toggleComparePin: (topicId: string) => "pinned" | "unpinned" | "full";
   /** Replace both pins in one write (v0.16) — the dossier quick action and
@@ -244,7 +249,7 @@ function loadPersisted(): PersistedSnapshot | null {
         )
       : [];
     const compareIds = Array.isArray(data.compareIds)
-      ? data.compareIds.filter((c): c is string => typeof c === "string").slice(0, 2)
+      ? data.compareIds.filter((c): c is string => typeof c === "string").slice(0, 6)
       : [];
     return { filters, watchlist, savedViews, claimNotes, reports, compareIds };
   } catch {
@@ -480,7 +485,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setWatchlist((w) => (w.includes(topicId) ? w.filter((t) => t !== topicId) : [...w, topicId]));
   }, []);
 
-  /* ---- narrative A/B compare pins (v0.15) ----
+  /* ---- narrative compare pins (v0.15 · cap raised to six in v0.17 for
+     matrix mode) ----
      Result code lets callers surface the right toast; the functional
      updater keeps state correct even if two pins land in one event task. */
   const toggleComparePin = useCallback(
@@ -489,8 +495,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCompareIds(compareIds.filter((x) => x !== topicId));
         return "unpinned";
       }
-      if (compareIds.length >= 2) return "full";
-      setCompareIds((prev) => (prev.includes(topicId) || prev.length >= 2 ? prev : [...prev, topicId]));
+      if (compareIds.length >= 6) return "full";
+      setCompareIds((prev) => (prev.includes(topicId) || prev.length >= 6 ? prev : [...prev, topicId]));
       return "pinned";
     },
     [compareIds]

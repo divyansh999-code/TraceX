@@ -400,15 +400,16 @@ export function TrendsScreen() {
   const onComparePin = (id: string) => {
     const result = toggleComparePin(id);
     if (result === "full") {
-      toast("A/B holds two narratives", { description: "Unpin one of the pinned rows first." });
+      toast("Compare holds six narratives", {
+        description: "Unpin one of the pinned rows first — 3–6 pins render the rank matrix.",
+      });
     }
   };
-  const compareTopics = useMemo(() => {
-    const [ida, idb] = compareIds;
-    const ta = ida ? getTopicById(ida) : null;
-    const tb = idb ? getTopicById(idb) : null;
-    return ta && tb ? ([ta, tb] as [Topic, Topic]) : null;
-  }, [compareIds]);
+  /* compare pins → topics array (v0.17): 2 pins = A/B dossier, 3–6 = matrix */
+  const compareTopics = useMemo(
+    () => compareIds.map((id) => getTopicById(id)).filter((t): t is Topic => !!t),
+    [compareIds]
+  );
   const selectTopic = (id: string) => {
     setSelectedTopicId(id);
     setSheetOpen(true);
@@ -790,7 +791,7 @@ export function TrendsScreen() {
             {compareIds.length > 0 && (
               <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-sm border border-primary/40 bg-primary/10 text-[10px] font-mono text-primary shrink-0">
                 <GitCompareArrows className="size-3" />
-                {compareIds.length}/2 pinned
+                {compareIds.length}/6 pinned
                 <button
                   type="button"
                   onClick={clearCompare}
@@ -806,11 +807,16 @@ export function TrendsScreen() {
               variant="outline"
               size="sm"
               className="h-7 px-2.5 text-[11px] gap-1.5 shrink-0"
-              disabled={compareIds.length !== 2}
-              title="Compare the two pinned narratives side-by-side"
+              disabled={compareIds.length < 2}
+              title={
+                compareIds.length >= 3
+                  ? `Compare ${compareIds.length} narratives in the rank matrix`
+                  : "Compare the two pinned narratives side-by-side"
+              }
               onClick={() => setCompareOpen(true)}
             >
-              <GitCompareArrows className="size-3.5" /> A/B
+              <GitCompareArrows className="size-3.5" />
+              {compareIds.length >= 3 ? `Matrix ${compareIds.length}` : "A/B"}
             </Button>
             <Button
               variant="outline"
@@ -850,7 +856,7 @@ export function TrendsScreen() {
                   {["", "Keyword / hashtag", "Category", "Volume", "24h Δ", "Platforms", "Risk"].map((h, i) => (
                     <th key={i} className="taxonomy text-muted-foreground/70 font-semibold px-4 py-2 whitespace-nowrap first:w-14 first:px-2">
                       {h === "" ? (
-                        <span className="flex items-center gap-0.5 pl-1.5" title="Watchlist · A/B compare pins">
+                        <span className="flex items-center gap-0.5 pl-1.5" title="Watchlist · compare console pins">
                           <Star className="size-2.5 text-muted-foreground/50" />
                           <GitCompareArrows className="size-2.5 text-muted-foreground/50" />
                         </span>
@@ -893,7 +899,7 @@ export function TrendsScreen() {
                                 ? "text-primary"
                                 : "text-muted-foreground/50 hover:text-foreground"
                             )}
-                            title={compareIds.includes(topic.id) ? "Unpin from A/B compare" : "Pin to A/B compare"}
+                            title={compareIds.includes(topic.id) ? "Unpin from compare console" : "Pin to compare console (2 = A/B · 3–6 = matrix)"}
                             aria-label={compareIds.includes(topic.id) ? "Unpin from compare" : "Pin to compare"}
                           >
                             <GitCompareArrows
@@ -967,16 +973,17 @@ export function TrendsScreen() {
         </SheetContent>
       </Sheet>
 
-      {/* A/B narrative compare (v0.14) */}
+      {/* A/B + matrix narrative compare (v0.14 → v0.17) */}
       <CompareDialog
         open={compareOpen}
         onOpenChange={setCompareOpen}
-        topics={compareTopics}
+        topics={compareTopics.length >= 2 ? compareTopics : null}
         filters={filters}
         onDrill={(id) => {
           setCompareOpen(false);
           selectTopic(id);
         }}
+        onUnpin={(id) => toggleComparePin(id)}
       />
 
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">

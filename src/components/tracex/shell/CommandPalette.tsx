@@ -45,9 +45,11 @@ import {
   FlaskConical,
   GitCompareArrows,
   CalendarSearch,
+  SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { ScreenId } from "@/lib/mock/types";
+import { cn } from "@/lib/utils";
+import type { Platform, RangeKey, ScreenId } from "@/lib/mock/types";
 import { startGuidedTour } from "./GuidedTour";
 
 const MODULES: { id: ScreenId; code: string; label: string; icon: typeof LayoutDashboard }[] = [
@@ -74,9 +76,19 @@ const PLATFORM_META = {
 /** Strict token-based palette filter (v0.13): every whitespace-separated
  *  query token must occur as a substring of the item value — no more
  *  loose fuzzy matches (searching "tour" used to highlight a narrative
- *  with "transactions…"). Prefix and whole-phrase matches rank higher. */
+ *  with "transactions…"). Prefix and whole-phrase matches rank higher.
+ *
+ *  v0.17: values carrying the `nl-intent` marker opt OUT of token scoring.
+ *  Natural-language intent items derive their value from the live query
+ *  (resolved topics, filter descriptions) — cmdk re-scores mid-keystroke
+ *  against the PREVIOUSLY registered value, so a newly-typed token would
+ *  score 0, unmount the item before its updated value re-registers, and
+ *  dead-lock the group. Opt-out is safe because those groups only mount
+ *  once the query itself parses as the intent — they can never leak into
+ *  unrelated searches. */
 const tokenFilter: (value: string, search: string) => number = (value, search) => {
   const v = value.toLowerCase();
+  if (v.startsWith("nl-intent")) return 1;
   const q = search.toLowerCase().trim();
   if (!q) return 1;
   const tokens = q.split(/\s+/).filter(Boolean);
@@ -87,11 +99,16 @@ const tokenFilter: (value: string, search: string) => number = (value, search) =
   return score;
 };
 
-/* ---- natural-language compare intent (v0.16) ----
+/* ---- natural-language intents (v0.16 → v0.17) ----
    "compare gaganyaan vs neet" → resolve each side to a narrative
    (exact id/label first, then substring across id/label/gloss so
-   romanized fragments keep working) and arm the global A/B pair. */
+   romanized fragments keep working) and arm the global A/B pair.
+   v0.17 adds "goto <module>", "filter <spec>…" (platform / range /
+   language, composable) and "watch <topic>" operators. */
 const COMPARE_RE = /^\s*compare\s+(.+?)\s+(?:vs\.?|versus)\s+(.+?)\s*$/i;
+const GOTO_RE = /^\s*(?:go\s*to|goto|open|show)\s+(.+?)\s*$/i;
+const FILTER_RE = /^\s*(?:filter|set|use)\s+(.+?)\s*$/i;
+const WATCH_RE = /^\s*(?:watch|star|follow)\s+(.+?)\s*$/i;
 
 const sideTopic = (q: string) => {
   const s = q.trim().toLowerCase();
@@ -107,6 +124,93 @@ const sideTopic = (q: string) => {
   );
 };
 
+/** Resolve a goto target to a module — matches id, label (substring) or code. */
+const gotoModule = (q: string) => {
+  const s = q.trim().toLowerCase();
+  if (!s) return undefined;
+  return (
+    MODULES.find(
+      (m) =>
+        m.id === s ||
+        m.label.toLowerCase().includes(s) ||
+        m.code === s ||
+        /* friendly aliases: "bots", "misinfo", "graph", "alerts"… */
+        (s.length >= 3 && m.id.includes(s.replace(/\s+/g, "")))
+    ) ?? (s === "graph" ? MODULES.find((m) => m.id === "network") : undefined)
+  );
+};
+
+/** Parse a filter intent into concrete filter-bank writes. Composable:
+   "filter x 30d", "filter telegram", "filter hindi last 14 days". */
+interface FilterIntent {
+  platform?: Platform;
+  range?: RangeKey;
+  customDays?: number;
+  language?: string;
+  describe: string[];
+}
+const parseFilterIntent = (q: string): FilterIntent | null => {
+  const s = q.trim().toLowerCase();
+  if (!s) return null;
+  const intent: FilterIntent = { describe: [] };
+
+  /* platform tokens */
+  if (/\b(?:x|twitter|tweets?)\b/.test(s)) {
+    intent.platform = "x";
+    intent.describe.push("X only");
+  } else if (/\b(?:telegram|tg)\b/.test(s)) {
+    intent.platform = "telegram";
+    intent.describe.push("Telegram only");
+  } else if (/\b(?:all|both|everything)\b/.test(s)) {
+    intent.platform = "all";
+    intent.describe.push("all platforms");
+  }
+
+  /* range tokens */
+  const lastDays = s.match(/last\s+(\d+)\s*days?/);
+  if (/\b(?:24h|today|day)\b/.test(s)) {
+    intent.range = "24h";
+    intent.describe.push("24h window");
+  } else if (/\b(?:7d|week)\b/.test(s)) {
+    intent.range = "7d";
+    intent.describe.push("7d window");
+  } else if (/\b(?:30d|month)\b/.test(s)) {
+    intent.range = "30d";
+    intent.describe.push("30d window");
+  } else if (lastDays) {
+    const d = Math.min(90, Math.max(3, parseInt(lastDays[1], 10)));
+    intent.range = "custom";
+    intent.customDays = d;
+    intent.describe.push(`${d}d window`);
+  }
+
+  /* language tokens — first named language wins */
+  const LANG_ALIASES: Record<string, string> = {
+    hindi: "hi",
+    हिन्दी: "hi",
+    english: "en",
+    hinglish: "hinglish",
+    tamil: "ta",
+    தமிழ்: "ta",
+    telugu: "te",
+    తెలుగు: "te",
+    bengali: "bn",
+    bangla: "bn",
+    বাংলা: "bn",
+    marathi: "mr",
+    मराठी: "mr",
+  };
+  for (const [alias, code] of Object.entries(LANG_ALIASES)) {
+    if (new RegExp(`\\b${alias}\\b`).test(s)) {
+      intent.language = code;
+      intent.describe.push(`${LANGUAGES.find((l) => l.code === code)?.label ?? alias} filter`);
+      break;
+    }
+  }
+
+  return intent.describe.length ? intent : null;
+};
+
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   /* live query feed (v0.16) — cmdk's onValueChange drives the
@@ -118,6 +222,9 @@ export function CommandPalette() {
     setPlatform,
     resetFilters,
     toggleLanguage,
+    setRange,
+    setCustomDays,
+    toggleWatchlist,
     filters,
     watchlist,
     setReportOpen,
@@ -150,6 +257,28 @@ export function CommandPalette() {
     const b = sideTopic(m[2]);
     if (!a || !b || a.id === b.id) return null;
     return { a, b };
+  }, [query]);
+
+  /* v0.17 operator intents: goto / filter / watch */
+  const nlGoto = useMemo(() => {
+    const m = query.match(GOTO_RE);
+    if (!m) return null;
+    const mod = gotoModule(m[1]);
+    return mod ? { mod } : null;
+  }, [query]);
+
+  const nlFilter = useMemo(() => {
+    const m = query.match(FILTER_RE);
+    if (!m) return null;
+    const intent = parseFilterIntent(m[1]);
+    return intent ? { intent, raw: m[1].trim() } : null;
+  }, [query]);
+
+  const nlWatch = useMemo(() => {
+    const m = query.match(WATCH_RE);
+    if (!m) return null;
+    const t = sideTopic(m[1]);
+    return t ? { t } : null;
   }, [query]);
 
   useEffect(() => {
@@ -197,7 +326,7 @@ export function CommandPalette() {
         filter={tokenFilter}
       >
         <CommandInput
-          placeholder="Type a module, narrative, claim, handle — or “compare X vs Y”…"
+          placeholder="Search, or try: “goto bots” · “filter x 30d” · “compare X vs Y” · “watch neet”…"
           onValueChange={setQuery}
         />
         <CommandList className="max-h-[420px]">
@@ -276,13 +405,105 @@ export function CommandPalette() {
             </>
           )}
 
-          {/* A/B compare (v0.15): appears once two narratives are pinned —
-              pins are global state, so this works from any screen */}
-          {compareIds.length === 2 && (
+          {/* Natural-language operator intents (v0.17): "goto bots",
+              "filter x 30d" (composable platform/range/language) and
+              "watch neet" — the same NL gesture class as "compare X vs Y" */}
+          {nlGoto && (
             <>
-              <CommandGroup heading="Narrative A/B — pinned pair">
+              <CommandGroup heading="Natural language — navigation">
                 <CommandItem
-                  value={`compare ab versus ${compareIds.join(" ")} ${compareLabel(compareIds[0])} ${compareLabel(compareIds[1])} ${compareGloss(compareIds[0])} ${compareGloss(compareIds[1])} pins`}
+                  value={`goto go to open show module ${nlGoto.mod.id} ${nlGoto.mod.label} ${nlGoto.mod.code} navigation`}
+                  onSelect={() => {
+                    go(nlGoto.mod.id);
+                    setOpen(false);
+                    toast(`Jumped to ${nlGoto.mod.label}`, {
+                      description: "Natural-language navigation from the command palette.",
+                    });
+                  }}
+                >
+                  <nlGoto.mod.icon className="size-3.5 text-primary" />
+                  <span className="truncate max-w-64">Go to {nlGoto.mod.label}</span>
+                  <CommandShortcut className="font-mono text-[10px]">{nlGoto.mod.code}</CommandShortcut>
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+            </>
+          )}
+
+          {nlFilter && (
+            <>
+              <CommandGroup heading="Natural language — filter bank">
+                <CommandItem
+                  value={`filter set use platform range language intent ${nlFilter.raw} ${nlFilter.intent.describe.join(" ")} filters bank`}
+                  onSelect={() => {
+                    const { intent } = nlFilter;
+                    if (intent.platform) setPlatform(intent.platform);
+                    if (intent.range === "custom" && intent.customDays) {
+                      setCustomDays(intent.customDays);
+                    } else if (intent.range) {
+                      setRange(intent.range);
+                    }
+                    if (intent.language) toggleLanguage(intent.language);
+                    setOpen(false);
+                    toast("Filter bank updated", {
+                      description: intent.describe.join(" · ") + " — natural-language intent applied.",
+                    });
+                  }}
+                >
+                  <SlidersHorizontal className="size-3.5 text-primary" />
+                  <span className="truncate max-w-64">Apply {nlFilter.intent.describe.join(" · ")}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground truncate hidden sm:inline">
+                    “{nlFilter.raw}”
+                  </span>
+                  <CommandShortcut className="font-mono text-[10px]">FILTER</CommandShortcut>
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+            </>
+          )}
+
+          {nlWatch && (
+            <>
+              <CommandGroup heading="Natural language — watchlist">
+                <CommandItem
+                  value={`watch star follow ${nlWatch.t.id} ${nlWatch.t.label} ${nlWatch.t.gloss} watchlist`}
+                  onSelect={() => {
+                    toggleWatchlist(nlWatch.t.id);
+                    setOpen(false);
+                    toast(
+                      watchlist.includes(nlWatch.t.id)
+                        ? `Removed from watchlist: ${nlWatch.t.label}`
+                        : `Watching: ${nlWatch.t.label}`,
+                      {
+                        description: "Natural-language watchlist intent from the command palette.",
+                      }
+                    );
+                  }}
+                >
+                  <Star className={cn("size-3.5", watchlist.includes(nlWatch.t.id) ? "fill-primary text-primary" : "text-primary")} />
+                  <span className="truncate max-w-64">
+                    {watchlist.includes(nlWatch.t.id) ? "Unwatch" : "Watch"} {nlWatch.t.label}
+                  </span>
+                  <span className="text-[10px] font-mono text-muted-foreground tnum">
+                    {fmtCompact(nlWatch.t.baseVolume * 1.75)}
+                  </span>
+                  <CommandShortcut className="font-mono text-[10px]">
+                    {watchlist.includes(nlWatch.t.id) ? "UNWATCH" : "WATCH"}
+                  </CommandShortcut>
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+            </>
+          )}
+
+          {/* A/B compare + matrix (v0.15 → v0.17): appears once two or more
+              narratives are pinned — 2 pins open the A/B dossier, 3–6 the
+              rank matrix; pins are global state, so this works from any screen */}
+          {compareIds.length >= 2 && (
+            <>
+              <CommandGroup heading={compareIds.length >= 3 ? "Narrative compare — matrix" : "Narrative compare — pinned pair"}>
+                <CommandItem
+                  value={`compare ab matrix versus rank ${compareIds.join(" ")} ${compareIds.map(compareLabel).join(" ")} ${compareIds.map(compareGloss).join(" ")} pins`}
                   onSelect={() => {
                     go("trends");
                     setCompareOpen(true);
@@ -291,9 +512,13 @@ export function CommandPalette() {
                 >
                   <GitCompareArrows className="size-3.5 text-primary" />
                   <span className="truncate max-w-64">
-                    Compare {compareLabel(compareIds[0])} vs {compareLabel(compareIds[1])}
+                    {compareIds.length >= 3
+                      ? `Compare ${compareIds.length} narratives (rank matrix)`
+                      : `Compare ${compareLabel(compareIds[0])} vs ${compareLabel(compareIds[1])}`}
                   </span>
-                  <CommandShortcut className="font-mono text-[10px]">A/B</CommandShortcut>
+                  <CommandShortcut className="font-mono text-[10px]">
+                    {compareIds.length >= 3 ? "MATRIX" : "A/B"}
+                  </CommandShortcut>
                 </CommandItem>
               </CommandGroup>
               <CommandSeparator />
@@ -509,9 +734,18 @@ export function CommandPalette() {
         </CommandList>
 
         <div className="border-t border-border px-3 py-1.5 flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
-          <span>↑↓ navigate</span>
-          <span>↵ execute</span>
-          <span>esc close</span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-sm border border-border bg-muted/50 text-[9px]">↑↓</kbd>
+            navigate
+          </span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-sm border border-border bg-muted/50 text-[9px]">↵</kbd>
+            execute
+          </span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-sm border border-border bg-muted/50 text-[9px]">esc</kbd>
+            close
+          </span>
           <span className="ml-auto flex items-center gap-1">
             <Star className="size-2.5 text-primary" />
             {watchlist.length} watched

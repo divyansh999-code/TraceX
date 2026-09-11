@@ -1,5 +1,6 @@
 import { rngFrom } from "./rng";
 import { TOPICS, CLAIMS, NOW } from "./content";
+import { getBots } from "./network";
 import type {
   Filters,
   Kpis,
@@ -12,6 +13,7 @@ import type {
   DayDossier,
   DayNarrativeSlice,
   DayClaimSlice,
+  DayBotSlice,
   Topic as TopicT,
 } from "./types";
 
@@ -475,6 +477,31 @@ export function getDayDossier(t: number, filters: Filters): DayDossier | null {
     })),
   ].slice(0, 3);
 
+  /* Bot suspects (v0.17): top flagged accounts by bot score (deduped by
+     handle — curated telegram names repeat across cluster members), with a
+     deterministic day-scaled post count (busier days → more attributed
+     posts) — mirrors the Bot Detection table so the hand-off is coherent. */
+  const seenHandles = new Set<string>();
+  const bots: DayBotSlice[] = getBots(filters)
+    .flagged.filter((b) => {
+      if (seenHandles.has(b.handle)) return false;
+      seenHandles.add(b.handle);
+      return true;
+    })
+    .slice(0, 3)
+    .map((b) => {
+      const dayRng = rngFrom("daybots", b.id, String(t));
+      const dayFactor = 0.5 + (point.total / Math.max(1, point.baseline)) / 2;
+      return {
+        id: b.id,
+        handle: b.handle,
+        platform: b.platform,
+        botProb: b.botProb,
+        clusterLabel: b.clusterId ? `cluster ${b.clusterId.replace(/^c-/, "")} · ${b.clusterSize} accts` : null,
+        posts: Math.max(1, Math.round(b.postsPerDay * dayFactor * dayRng.range(0.7, 1.2))),
+      };
+    });
+
   const total = Math.max(1, point.total);
   return {
     t,
@@ -490,6 +517,7 @@ export function getDayDossier(t: number, filters: Filters): DayDossier | null {
     },
     narratives,
     claims,
+    bots,
   };
 }
 

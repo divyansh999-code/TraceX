@@ -61,15 +61,20 @@ export function KpiCard({
   return (
     <div
       className={cn(
-        "relative bg-card border border-border rounded-lg p-4 min-w-0 overflow-hidden",
+        "relative bg-card border border-border rounded-lg p-4 min-w-0 overflow-hidden group",
         "transition-all duration-150 hover:border-muted-foreground/40 hover:bg-accent/50",
         className
       )}
     >
-      <span className={cn("absolute left-0 top-4 bottom-4 w-[3px] rounded-r-sm", toneBar)} />
+      <span
+        className={cn(
+          "absolute left-0 top-4 bottom-4 w-[3px] rounded-r-sm transition-all duration-200 group-hover:top-3 group-hover:bottom-3 group-hover:w-1",
+          toneBar
+        )}
+      />
       <div className="flex items-center justify-between gap-2">
         <span className="taxonomy text-muted-foreground">{label}</span>
-        {Icon && <Icon className={cn("size-4 shrink-0", toneText)} strokeWidth={1.75} />}
+        {Icon && <Icon className={cn("size-4 shrink-0 transition-transform duration-200 group-hover:scale-110", toneText)} strokeWidth={1.75} />}
       </div>
       <div className="mt-2.5 flex items-baseline gap-2 min-w-0">
         <span className={cn("font-mono text-[26px] leading-none tnum font-medium tracking-tight", toneText)}>
@@ -81,7 +86,7 @@ export function KpiCard({
         )}
       </div>
       {spark && spark.length > 1 && (
-        <div className="mt-3">
+        <div className="mt-3 opacity-80 transition-opacity duration-200 group-hover:opacity-100">
           <Sparkline data={spark} color={sparkColor} width={220} height={30} />
         </div>
       )}

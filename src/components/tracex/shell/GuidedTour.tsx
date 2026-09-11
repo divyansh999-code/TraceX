@@ -123,10 +123,13 @@ const STEPS: TourStep[] = [
     body: (
       <>
         <p>
-          <span className="font-mono text-foreground">⌘K</span> opens the command palette — type{" "}
-          <span className="font-mono text-foreground">compare x vs y</span> to arm an A/B, or jump to
-          the latest spike&apos;s day dossier; <span className="font-mono text-foreground">?</span> lists
-          every shortcut, and generated briefings can be archived for later.
+          <span className="font-mono text-foreground">⌘K</span> opens the command palette — it speaks
+          operator sentences: <span className="font-mono text-foreground">compare x vs y</span>,{" "}
+          <span className="font-mono text-foreground">goto bots</span>,{" "}
+          <span className="font-mono text-foreground">filter x 30d</span> or{" "}
+          <span className="font-mono text-foreground">watch neet</span>; pin 3–6 narratives for the rank
+          matrix; <span className="font-mono text-foreground">?</span> lists every shortcut, and generated
+          briefings can be archived for later.
         </p>
         <p className="text-muted-foreground">Good hunting, analyst.</p>
       </>

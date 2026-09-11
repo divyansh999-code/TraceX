@@ -12,6 +12,10 @@
  * dominant narratives into the global compare; the footer copies a shareable
  * `#/overview/day:TS` deep-link. The same body renders inside the anchored
  * popover AND the shell-level DayDossierDialog (replay / palette / link).
+ *
+ * v0.17: narrative rows drill into the Trend Explorer sheet on click, and a
+ * "bot suspects" section surfaces the day's highest-scoring automation with
+ * a hand-off into Bot Detection.
  */
 import { useMemo } from "react";
 import type { Filters } from "@/lib/mock/types";
@@ -20,10 +24,10 @@ import { fmtCompact, fmtDayIST, fmtFull, fmtSigned, riskTone } from "@/lib/fmt";
 import { useApp } from "@/lib/app-state";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Badge, Taxonomy } from "./primitives";
+import { Badge, Taxonomy, ScoreBar } from "./primitives";
 import { Sparkline } from "./Sparkline";
 import type { HeatDay } from "./HeatCalendar";
-import { AtSign, Send, Flame, ShieldAlert, ArrowUpRight, CalendarDays, GitCompareArrows, Link2 } from "lucide-react";
+import { AtSign, Send, Flame, ShieldAlert, ArrowUpRight, CalendarDays, GitCompareArrows, Link2, Bot } from "lucide-react";
 
 const STATUS_TONE: Record<string, "red" | "amber" | "cyan" | "slate"> = {
   False: "red",
@@ -68,7 +72,7 @@ export function DayDossier({
   filters: Filters;
   onOpenTrends: (day: HeatDay) => void;
 }) {
-  const { setComparePair, go, setCompareOpen } = useApp();
+  const { setComparePair, go, setCompareOpen, setSelectedTopicId } = useApp();
   const dossier = useMemo(() => getDayDossier(day.t, filters), [day.t, filters]);
 
   if (!dossier) {
@@ -90,6 +94,14 @@ export function DayDossier({
     setCompareOpen(true);
     toast(`A/B armed: ${topA.label} vs ${topB.label}`, {
       description: "The day's two dominant narratives, pinned into the compare console.",
+    });
+  };
+
+  const openNarrative = (id: string, label: string) => {
+    setSelectedTopicId(id);
+    go("trends", { topicId: id });
+    toast(`Drill-down: ${label}`, {
+      description: `30-day narrative velocity opening in the Trend Explorer for ${fmtDayIST(dossier?.t ?? Date.now())}.`,
     });
   };
 
@@ -175,7 +187,14 @@ export function DayDossier({
             {dossier.narratives.map((n) => (
               <li key={n.id} className="flex items-center gap-2">
                 <Flame className={cn("size-3 shrink-0", n.spike ? "text-signal-red" : "text-muted-foreground/50")} strokeWidth={1.75} />
-                <span className="text-xs text-foreground truncate min-w-0 flex-1" title={n.label}>{n.label}</span>
+                <button
+                  type="button"
+                  onClick={() => openNarrative(n.id, n.label)}
+                  title={`Drill into ${n.label} — 30-day velocity in the Trend Explorer`}
+                  className="text-xs text-foreground/90 hover:text-primary text-left truncate min-w-0 flex-1 decoration-primary/40 underline-offset-2 hover:underline cursor-pointer transition-colors"
+                >
+                  {n.label}
+                </button>
                 <Sparkline
                   data={n.context}
                   markIdx={n.contextIdx}
@@ -183,7 +202,7 @@ export function DayDossier({
                   width={56}
                   height={16}
                   strokeWidth={1.25}
-                  className="shrink-0"
+                  className="shrink-0 pointer-events-none"
                 />
                 <span
                   className="font-mono text-[10px] tnum text-muted-foreground shrink-0 w-16 text-right"
@@ -194,6 +213,9 @@ export function DayDossier({
               </li>
             ))}
           </ul>
+          <p className="mt-1.5 text-[9px] font-mono text-muted-foreground/60">
+            click a narrative to drill · sparkline = ±3-day context
+          </p>
         </div>
 
         {/* claims in play */}
@@ -227,6 +249,43 @@ export function DayDossier({
               ))}
             </ul>
           )}
+        </div>
+
+        {/* bot suspects (v0.17) — the day's highest-scoring automation */}
+        <div className="border-t border-border/70 pt-2.5">
+          <div className="flex items-center gap-2">
+            <Taxonomy>Bot suspects</Taxonomy>
+            <button
+              type="button"
+              onClick={() => go("bots")}
+              title="Open Bot Detection — full flagged-accounts table"
+              className="ml-auto inline-flex items-center gap-1 h-5 px-1.5 rounded-sm border border-border text-[9px] font-mono text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors cursor-pointer"
+            >
+              <Bot className="size-2.5" />
+              inspect
+            </button>
+          </div>
+          <ul className="mt-1.5 space-y-1.5">
+            {dossier.bots.map((b) => (
+              <li key={b.id} className="flex items-center gap-2">
+                {b.platform === "x" ? (
+                  <AtSign className="size-3 shrink-0 text-signal-orange/80" strokeWidth={1.75} />
+                ) : (
+                  <Send className="size-3 shrink-0 text-signal-cyan/80" strokeWidth={1.75} />
+                )}
+                <span className="font-mono text-[11px] text-foreground truncate min-w-0 flex-1" title={`${b.handle} · ${b.clusterLabel ?? "unclustered"}`}>
+                  {b.handle}
+                </span>
+                <ScoreBar value={b.botProb} className="w-14 shrink-0" />
+                <span
+                  className="font-mono text-[10px] tnum text-muted-foreground shrink-0 w-14 text-right"
+                  title={`bot score ${b.botProb.toFixed(2)} · ${b.posts} posts that day${b.clusterLabel ? ` · ${b.clusterLabel}` : ""}`}
+                >
+                  {b.botProb.toFixed(2)} · {b.posts}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
 

@@ -287,6 +287,17 @@ export interface DayClaimSlice {
   why: string; // e.g. "first detected that day" | "active in #GaganyaanLaunch"
 }
 
+/** Top bot suspects active on the day (v0.17) — deterministic slice of the
+ *  flagged-accounts table, scored for the day's volume. */
+export interface DayBotSlice {
+  id: string;
+  handle: string;
+  platform: "x" | "telegram";
+  botProb: number;
+  clusterLabel: string | null;
+  posts: number; // posts attributed to that day
+}
+
 export interface DayDossier {
   t: number;
   label: string;
@@ -297,6 +308,8 @@ export interface DayDossier {
   sentiment: { positive: number; neutral: number; negative: number }; // fractions
   narratives: DayNarrativeSlice[];
   claims: DayClaimSlice[];
+  /** Highest-scoring bot accounts active in the day's top narratives (v0.17). */
+  bots: DayBotSlice[];
 }
 
 export interface Influencer {
