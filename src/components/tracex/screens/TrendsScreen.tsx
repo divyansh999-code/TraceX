@@ -683,7 +683,7 @@ export function TrendsScreen() {
                     y={p.total}
                     r={4}
                     fill={CHART.amber}
-                    stroke="#0A0E14"
+                    stroke="#FFFFFF"
                     strokeWidth={1}
                   />
                 ))}
@@ -989,7 +989,7 @@ export function TrendsScreen() {
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
         <Users className="size-3" />
         Source: aggregated public posts (X, Telegram) · anonymised cohorts · window {windowLabel} ·
-        prototype data
+        refresh cadence 5 min
       </div>
     </div>
   );

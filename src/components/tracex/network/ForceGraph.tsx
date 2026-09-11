@@ -44,11 +44,11 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.5;
 
 const INK = {
-  edge: "#232838",
-  trace: "#D9A441",
-  bot: "#D9564F",
-  selected: "#E8823A",
-  label: "#8B92A5",
+  edge: "#D6D1E6",
+  trace: "#B5823A",
+  bot: "#C4576B",
+  selected: "#6B5FA4",
+  label: "#6E6889",
 } as const;
 
 /* Mutable simulation types — d3-force writes x/y/vx/vy and link refs. */
@@ -249,7 +249,7 @@ const NodeLayer = memo(function NodeLayer({
               cx={p.x}
               cy={p.y}
               r={r}
-              fill={colorOf.get(n.communityId) ?? "#5FA1C4"}
+              fill={colorOf.get(n.communityId) ?? "#8787CE"}
               fillOpacity={0.9}
               stroke={stroke}
               strokeWidth={strokeWidth}

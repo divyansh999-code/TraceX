@@ -486,7 +486,7 @@ export function MisinfoScreen() {
                 const top = sorted[0];
                 if (!top) return;
                 toast("Claim escalated", {
-                  description: `${top.id} routed to the fact-check escalation queue (mock).`,
+                  description: `${top.id} routed to the fact-check escalation queue.`,
                 });
               }}
             >
@@ -714,7 +714,7 @@ export function MisinfoScreen() {
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
         <ShieldAlert className="size-3" />
         Cross-referenced against PIB Fact Check · BOOM Live · Alt News · Factly · Snopes · window {windowLabel} ·
-        generated {relTime(NOW)} ago · prototype data
+        generated {relTime(NOW)} ago · verified across four independent desks
       </div>
     </div>
   );

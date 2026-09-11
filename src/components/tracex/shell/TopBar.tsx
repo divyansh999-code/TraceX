@@ -11,8 +11,7 @@ import { LiveDot, Chip } from "../common/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Search, Moon, SunMedium, RotateCw, Send, CalendarClock, X as XIcon, Volume2, VolumeX, Bookmark, BookmarkPlus } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Search, RotateCw, Send, CalendarClock, X as XIcon, Volume2, VolumeX, Bookmark, BookmarkPlus } from "lucide-react";
 import { toast } from "sonner";
 import { isAudioEnabled, setAudioEnabled, playCriticalCue } from "@/lib/alert-cue";
 import { CommandPalette } from "./CommandPalette";
@@ -91,7 +90,6 @@ export function TopBar() {
     deleteView,
     isViewActive,
   } = useApp();
-  const { resolvedTheme, setTheme } = useTheme();
   const now = useNow(1000);
   const [searchText, setSearchText] = useState(filters.query);
   const [customOpen, setCustomOpen] = useState(false);
@@ -247,15 +245,6 @@ export function TopBar() {
           </button>
           <button
             type="button"
-            onClick={() => setTheme(resolvedTheme === "light" ? "dark" : "light")}
-            className="size-7 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-colors cursor-pointer"
-            title="Toggle console illumination"
-            aria-label="Toggle theme"
-          >
-            {resolvedTheme === "light" ? <Moon className="size-3.5" /> : <SunMedium className="size-3.5" />}
-          </button>
-          <button
-            type="button"
             onClick={() => {
               toast.success("Streams re-synced", {
                 description: "X stream · TG stream · correlation engine re-queried.",
@@ -391,7 +380,7 @@ export function TopBar() {
             ✕ clear
           </button>
         )}
-        <span className="ml-auto hidden lg:inline font-mono text-[10px] text-muted-foreground/60 shrink-0">
+        <span className="ml-auto hidden lg:inline font-mono text-[10px] text-muted-foreground/80 shrink-0">
           {filters.languages.length}/{LANGUAGES.length} selected
         </span>
       </div>

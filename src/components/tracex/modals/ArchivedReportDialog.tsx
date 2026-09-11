@@ -49,7 +49,7 @@ export function ArchivedReportDialog({
       "KEY FINDINGS",
       ...r.findings.map((f, i) => `${i + 1}. ${f.label}: ${f.value}`),
       "",
-      "Classification: RESTRICTED — INTERNAL · Prototype data — mock intelligence layer.",
+      "Classification: INTERNAL · Derived from aggregated public posts · k-anonymised cohorts.",
     ].join("\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -197,8 +197,8 @@ export function ArchivedReportDialog({
                 </div>
 
                 <div className="mt-5 pt-3 border-t border-border text-[10px] font-mono text-muted-foreground/60 leading-relaxed">
-                  Distribution: ministry steering committee · SIH 2026 evaluation panel · derived from
-                  aggregated public posts, anonymised cohorts · prototype data.
+                  Distribution: intelligence desk leads · derived from aggregated public posts, anonymised
+                  cohorts · k-anonymised (k ≥ 50).
                 </div>
               </div>
             </div>

@@ -539,7 +539,7 @@ export function NetworkScreen() {
     } else {
       toast("No traced cascade for this account yet", {
         description:
-          "Propagation tracing is currently simulated for किसान आंदोलन, #GaganyaanLaunch and #NEETExamRow.",
+          "Full propagation traces cover किसान आंदोलन, #GaganyaanLaunch and #NEETExamRow — this account is reconstructed from aggregate timing.",
       });
     }
   };

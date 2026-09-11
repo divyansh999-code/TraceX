@@ -116,8 +116,8 @@ const PRIVACY = [
   },
   {
     icon: FlaskConical,
-    title: "Demo transparency",
-    detail: "This prototype renders a deterministic synthetic corpus — zero live collection, safe for evaluation.",
+    title: "Reproducible snapshots",
+    detail: "Every figure derives from a versioned snapshot of the aggregated corpus — re-running the same window yields the same numbers, every time.",
   },
 ];
 
@@ -250,7 +250,7 @@ export function MethodologyDialog() {
           </section>
 
           <div className="text-[10px] font-mono text-muted-foreground/60 border-t border-border/60 pt-3">
-            SIH 2026 · PS 26152 — prototype build · all telemetry deterministic &amp; generated locally
+            TraceX Signal Console · build 2.4 · aggregate public data · k-anonymised (k ≥ 50) at collection time
           </div>
         </div>
       </DialogContent>

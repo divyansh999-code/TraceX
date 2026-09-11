@@ -15,7 +15,7 @@ export function KpiCard({
   invertDelta,
   deltaSuffix,
   spark,
-  sparkColor = "#5FA1C4",
+  sparkColor = "#8787CE",
   footnote,
   tone = "neutral",
   className,

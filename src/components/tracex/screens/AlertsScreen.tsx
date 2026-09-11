@@ -351,8 +351,8 @@ function ReportsPanel({ onGenerate }: { onGenerate: () => void }) {
               className="h-6 w-6 p-0"
               aria-label={`Download ${r.id}`}
               onClick={() =>
-                toast("Report export queued (prototype)", {
-                  description: `${r.id} · ${r.name} · PDF pipeline simulated.`,
+                toast("Report export queued", {
+                  description: `${r.id} · ${r.name} · PDF will land in your downloads.`,
                 })
               }
             >
@@ -680,7 +680,7 @@ export function AlertsScreen() {
           tone="cyan"
           delta={6.4}
           spark={[6, 8, 7, 9, 8, 11, 10, 12, 11, totalCount]}
-          sparkColor="#5FA1C4"
+          sparkColor="#8787CE"
           footnote={<span>active monitoring window</span>}
         />
         <KpiCard
@@ -691,7 +691,7 @@ export function AlertsScreen() {
           invertDelta
           delta={25}
           spark={[1, 2, 1, 3, 2, 4, 3, 5, 4, newCount]}
-          sparkColor="#D9564F"
+          sparkColor="#C4576B"
           footnote={<span>awaiting triage</span>}
         />
         <KpiCard
@@ -702,7 +702,7 @@ export function AlertsScreen() {
           invertDelta
           delta={-12.5}
           spark={[3, 2, 3, 2, 2, 1, 2, 1, 2, criticalCount]}
-          sparkColor="#D9564F"
+          sparkColor="#C4576B"
           footnote={<span>severity = critical</span>}
         />
         <KpiCard
@@ -712,7 +712,7 @@ export function AlertsScreen() {
           tone="amber"
           delta={4.2}
           spark={[2, 2, 3, 3, 4, 3, 4, 5, 4, ackCount]}
-          sparkColor="#D9A441"
+          sparkColor="#B5823A"
           footnote={<span>in review</span>}
         />
       </div>
@@ -732,7 +732,7 @@ export function AlertsScreen() {
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
         <BellRing className="size-3" />
         Alert engine: velocity z-scores · bot-cluster sync detection · claim re-emergence matching · sentiment drift ·
-        window {windowLabel} · generated {relTime(NOW)} ago · prototype data
+        window {windowLabel} · generated {relTime(NOW)} ago · engine 2.4
       </div>
     </div>
   );

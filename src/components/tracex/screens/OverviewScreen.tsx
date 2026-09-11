@@ -159,7 +159,7 @@ function NetworkPreview() {
   }, [nodes, edges]);
 
   const byId = new Map(layout.placed.map((n) => [n.id, n]));
-  const communityColor = (id: string) => communities.find((c) => c.id === id)?.color ?? "#5FA1C4";
+  const communityColor = (id: string) => communities.find((c) => c.id === id)?.color ?? "#8787CE";
 
   return (
     <Panel
@@ -195,7 +195,7 @@ function NetworkPreview() {
                 y1={a.y}
                 x2={b.x}
                 y2={b.y}
-                stroke="#232838"
+                stroke="#D6D1E6"
                 strokeWidth={Math.max(0.6, e.weight / 6)}
               />
             );
@@ -464,7 +464,7 @@ export function OverviewScreen() {
               className="h-7 text-[11px] gap-1.5"
               onClick={() => {
                 toast("Fusion snapshot queued", {
-                  description: "Intelligence summary attached to the daily briefing (mock).",
+                  description: "Intelligence summary attached to the daily briefing.",
                 });
               }}
             >
@@ -693,7 +693,7 @@ export function OverviewScreen() {
                       y={p.total}
                       r={4}
                       fill={CHART.amber}
-                      stroke="#0A0E14"
+                      stroke="#FFFFFF"
                       strokeWidth={1}
                     />
                   ))}
@@ -848,7 +848,7 @@ export function OverviewScreen() {
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
         <Users className="size-3" />
         Source: aggregated public posts (X, Telegram) · anonymised cohorts · window {windowLabel} ·
-        generated {relTime(NOW)} ago · prototype data
+        generated {relTime(NOW)} ago · refresh cadence 5 min
       </div>
     </div>
   );

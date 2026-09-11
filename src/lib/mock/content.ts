@@ -301,13 +301,13 @@ export const TOPICS: Topic[] = [
 
 /** Communities detected by Louvain modularity over the interaction graph. */
 export const COMMUNITIES: Community[] = [
-  { id: "c-news", label: "Core Newsrooms", color: "#5FA1C4", botShare: 0.08 },
-  { id: "c-amp", label: "Regional Amplifiers", color: "#D9A441", botShare: 0.34 },
-  { id: "c-policy", label: "Policy Watch", color: "#3EAF7C", botShare: 0.05 },
-  { id: "c-bot88", label: "Bot Cluster TX-88", color: "#D9564F", botShare: 0.86 },
-  { id: "c-fandom", label: "Sports & Fandom", color: "#A78BFA", botShare: 0.11 },
-  { id: "c-tech", label: "Tech Builders", color: "#E8823A", botShare: 0.07 },
-  { id: "c-civic", label: "Civil Society", color: "#94A3B8", botShare: 0.14 },
+  { id: "c-news", label: "Core Newsrooms", color: "#8787CE", botShare: 0.08 },
+  { id: "c-amp", label: "Regional Amplifiers", color: "#B5823A", botShare: 0.34 },
+  { id: "c-policy", label: "Policy Watch", color: "#5C9A7E", botShare: 0.05 },
+  { id: "c-bot88", label: "Bot Cluster TX-88", color: "#C4576B", botShare: 0.86 },
+  { id: "c-fandom", label: "Sports & Fandom", color: "#9995E8", botShare: 0.11 },
+  { id: "c-tech", label: "Tech Builders", color: "#6B5FA4", botShare: 0.07 },
+  { id: "c-civic", label: "Civil Society", color: "#8B87A3", botShare: 0.14 },
 ];
 
 /** Fact-check cross-reference sources used by the Misinformation Radar. */

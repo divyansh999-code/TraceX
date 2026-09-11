@@ -1,34 +1,33 @@
 "use client";
 
-/** Recharts helpers: theme-aware axes + the console-styled tooltip. */
-import { useTheme } from "next-themes";
+/** Recharts helpers: daylight-tuned axes + the console-styled tooltip. */
 import { cn } from "@/lib/utils";
 
-/** Static signal palette — legible on both dark & light surfaces. */
+/** Signal palette — keyed by role, tuned for white surfaces.
+ *  (Key names are historical; hues follow the Twilight palette.) */
 export const CHART = {
-  orange: "#E8823A",
-  green: "#3EAF7C",
-  amber: "#D9A441",
-  red: "#D9564F",
-  cyan: "#5FA1C4",
-  violet: "#A78BFA",
-  slate: "#94A3B8",
+  orange: "#6B5FA4", // Scampi — primary series / volume / X platform
+  green: "#5C9A7E", // sage — organic / positive / Telegram
+  amber: "#B5823A", // honey — warnings / spike flags
+  red: "#C4576B", // raspberry — bots / negative / high-risk
+  cyan: "#8787CE", // Faraway Sky — baselines / secondary
+  violet: "#9995E8", // Portage — tertiary accents
+  slate: "#8B87A3", // purple-gray — neutral series
 } as const;
 
+/** Daylight console theme — grids, ticks and crosshairs on white. */
 export function useChartTheme() {
-  const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme !== "light";
   return {
-    grid: dark ? "rgba(35, 40, 56, 0.8)" : "rgba(213, 215, 221, 0.9)",
-    tick: dark ? "#8B92A5" : "#5A6070",
-    zero: dark ? "#3A4054" : "#B8BAC2",
-    crosshair: dark ? "#3E465D" : "#9EA1AA",
+    grid: "rgba(229, 225, 240, 0.9)",
+    tick: "#6E6889",
+    zero: "#D6D1E6",
+    crosshair: "#B4AECB",
   };
 }
 
 export const AXIS = {
-  tick: { fontSize: 10, fontFamily: "var(--font-jetbrains), monospace", fill: "#8B92A5" },
-  axisLine: { stroke: "#232838" as string },
+  tick: { fontSize: 10, fontFamily: "var(--font-spline), monospace", fill: "#6E6889" },
+  axisLine: { stroke: "#E5E1F0" as string },
   tickLine: false as const,
 };
 
@@ -76,7 +75,7 @@ export function ChartTooltip({
           <div key={i} className="flex items-center gap-2 text-[11px]">
             <span
               className="size-2 rounded-[2px] shrink-0"
-              style={{ background: (entry.color as string) ?? "#5FA1C4" }}
+              style={{ background: (entry.color as string) ?? "#8787CE" }}
             />
             <span className="text-muted-foreground truncate max-w-32">{entry.name}</span>
             <span className="ml-auto font-mono tnum text-foreground whitespace-nowrap">

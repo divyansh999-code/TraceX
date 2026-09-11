@@ -38,7 +38,7 @@ const STATUS_TONE: Record<string, "red" | "amber" | "cyan" | "slate"> = {
 
 /* risk tone → sparkline stroke (mirrors the v0.15 share-bar colours) */
 const RISK_SPARK_COLOR = (risk: number) =>
-  risk >= 0.65 ? "#D9564F" : risk >= 0.4 ? "#D9A441" : "#5FA1C4";
+  risk >= 0.65 ? "#C4576B" : risk >= 0.4 ? "#B5823A" : "#8787CE";
 
 /** Clipboard with a textarea fallback for non-secure preview contexts. */
 async function copyText(text: string): Promise<boolean> {

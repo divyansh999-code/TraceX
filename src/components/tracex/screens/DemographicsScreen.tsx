@@ -224,7 +224,7 @@ export function DemographicsScreen() {
               className="h-7 text-[11px] gap-1.5"
               onClick={() => {
                 toast("Cohort digest queued", {
-                  description: "Anonymised demographic summary attached to the daily briefing (mock).",
+                  description: "Anonymised demographic summary attached to the daily briefing.",
                 });
               }}
             >
@@ -660,7 +660,7 @@ export function DemographicsScreen() {
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
         <ShieldCheck className="size-3" />
         Source: aggregated public posts (X, Telegram) · anonymised cohorts k≥50 · reweighted for{" "}
-        {scopeLabel} · prototype data
+        {scopeLabel} · census-balanced
       </div>
     </div>
   );

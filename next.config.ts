@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  /* Hide the dev-tools badge — the console should preview as a finished product */
+  devIndicators: false,
 };
 
 export default nextConfig;

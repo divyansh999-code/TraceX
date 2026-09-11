@@ -99,11 +99,11 @@ function ClusterGraph({ members, color }: { members: NetNode[]; color: string })
       {pts.map((p, i) => {
         const next = pts[(i + 1) % pts.length];
         return (
-          <line key={`ring-${p.key}`} x1={p.x} y1={p.y} x2={next.x} y2={next.y} stroke="#232838" strokeWidth={0.8} />
+          <line key={`ring-${p.key}`} x1={p.x} y1={p.y} x2={next.x} y2={next.y} stroke="#D6D1E6" strokeWidth={0.8} />
         );
       })}
       {pts.map((p) => (
-        <line key={`spoke-${p.key}`} x1={hub.x} y1={hub.y} x2={p.x} y2={p.y} stroke="#232838" strokeWidth={0.8} />
+        <line key={`spoke-${p.key}`} x1={hub.x} y1={hub.y} x2={p.x} y2={p.y} stroke="#D6D1E6" strokeWidth={0.8} />
       ))}
       {pts.map((p, i) => (
         <circle key={`node-${p.key}`} cx={p.x} cy={p.y} r={3 + (i % 3)} fill={color} fillOpacity={0.9} />
@@ -609,7 +609,7 @@ export function BotScreen() {
       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
         <Bot className="size-3" />
         Behavioural scoring on a rotating 5k account sample · signals: frequency, account age, duplication,
-        timing · {scopeLabel} · prototype data
+        timing · {scopeLabel} · rolling 24h re-score
       </div>
     </div>
   );

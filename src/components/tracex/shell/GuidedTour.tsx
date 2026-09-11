@@ -1,15 +1,19 @@
 "use client";
 
 /**
- * Guided tour (v0.13) — first-visit spotlight walkthrough.
+ * Guided tour — first-visit spotlight walkthrough.
  *
- * A dark scrim with a spotlight cut-out (box-shadow trick) walks new
- * analysts through the console: filter bank → module rail → watchlist →
- * fusion KPIs → live alert bus → palette hints. Auto-starts once per
- * browser (localStorage gate, set inside async callbacks — lint-clean),
- * relaunchable from the ⌘K palette / shortcut cheatsheet via the
- * `tracex:tour-start` CustomEvent. While active, module hotkeys are
- * muted (body class guard) and stray targets auto-skip.
+ * A spotlight cut-out (box-shadow trick) walks new analysts through the
+ * console: filter bank → module rail → watchlist → fusion KPIs → live
+ * alert bus → palette hints. Auto-starts once per browser (localStorage
+ * gate, set inside async callbacks — lint-clean), relaunchable from the
+ * ⌘K palette / shortcut cheatsheet via the `tracex:tour-start`
+ * CustomEvent. While active, module hotkeys are muted (body class guard)
+ * and stray targets auto-skip.
+ *
+ * The tooltip card is always rendered OPAQUE (solid white popover with a
+ * dusk-gradient accent rail) over an ink-tinted veil — centred steps dim
+ * the whole console, spotlighted steps keep the highlighted target clear.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "@/lib/app-state";
@@ -37,7 +41,7 @@ const STEPS: TourStep[] = [
     body: (
       <>
         <p>
-          A social-intelligence console that fuses <span className="text-foreground">X + Telegram</span> public
+          A social-intelligence console that fuses <span className="text-foreground font-medium">X + Telegram</span> public
           chatter into one operating picture — what&apos;s trending, who amplifies it, where it spreads and
           how sentiment shifts.
         </p>
@@ -147,7 +151,7 @@ interface Rect {
 const PAD = 8;
 
 /* index of the temporal-replay spotlight step — the tour suspends the live
-   alert feed while demonstrating it (v0.15), so no arrivals land mid-rewind */
+   alert feed while demonstrating it, so no arrivals land mid-rewind */
 const TM_STEP = STEPS.findIndex((s) => s.target === '[data-tour="time-machine"]');
 
 export function GuidedTour() {
@@ -161,7 +165,7 @@ export function GuidedTour() {
 
   const current = step != null ? STEPS[step] : null;
 
-  /* ---- feed pause during the time-machine step (v0.15): stepping onto
+  /* ---- feed pause during the time-machine step: stepping onto
      the replay spotlight suspends live arrivals (they'd confuse the
      rewind); leaving it — or ending the tour — resumes the singleton.
      No-op when the tour never started (step === null → resume is inert). */
@@ -261,8 +265,8 @@ export function GuidedTour() {
     setRect(next);
 
     /* card: prefer below the target, flip above when cramped; clamp to viewport */
-    const CARD_W = 340;
-    const estH = 210;
+    const CARD_W = 400;
+    const estH = 264;
     const below = next.top + next.height + 14;
     const useAbove = below + estH > window.innerHeight - 16 && next.top > estH + 32;
     const top = useAbove
@@ -336,8 +340,13 @@ export function GuidedTour() {
 
   return (
     <div role="dialog" aria-modal="true" aria-label={`Guided tour — ${current.title}`} className="fixed inset-0 z-[80]">
-      {/* click-catcher under the card: absorbs stray clicks, dim scrim */}
-      <div className="absolute inset-0 bg-background/72 backdrop-blur-[1px]" onClick={() => finish()} />
+      {/* click-catcher + veil: centred steps dim the whole console behind
+          an ink veil; spotlighted steps stay clear — the spotlight ring's
+          box-shadow casts the dimming scrim AROUND the target itself */}
+      <div
+        className={cn("absolute inset-0", centered ? "bg-foreground/40 backdrop-blur-[2px]" : "bg-foreground/5")}
+        onClick={() => finish()}
+      />
 
       {/* spotlight ring — box-shadow casts the scrim cut-out */}
       {rect && (
@@ -347,9 +356,10 @@ export function GuidedTour() {
         />
       )}
 
-      {/* tooltip card */}
+      {/* tooltip card — wrapper carries position so the caret can sit
+          outside the card's overflow-hidden body */}
       <div
-        className="absolute w-[min(340px,calc(100vw-32px))] bg-card border border-border shadow-2xl rounded-lg p-4 tour-card-in"
+        className="absolute tour-card-in"
         style={
           centered
             ? {
@@ -363,75 +373,94 @@ export function GuidedTour() {
         }
       >
         {/* caret pointing back at the spotlight target */}
-        {!centered && cardPos && (
+        {cardPos && !centered && (
           <span
             aria-hidden="true"
             className={cn(
-              "absolute size-2.5 rotate-45 bg-card border-border",
-              cardAbove ? "-bottom-[6px] border-b border-r" : "-top-[6px] border-l border-t"
+              "absolute size-2.5 rotate-45 bg-popover border-border",
+              cardAbove ? "-bottom-[5px] border-b border-r" : "-top-[5px] border-l border-t"
             )}
             style={{ left: 22 }}
           />
         )}
-        <div className="flex items-start gap-3">
-          {centered && <TraceXMark size={34} className="shrink-0 mt-0.5" />}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="taxonomy text-primary">step {step + 1} / {STEPS.length}</span>
-              {!centered && <span className="font-mono text-[10px] text-muted-foreground/70 truncate">{current.title}</span>}
+
+        <div className="relative w-[min(400px,calc(100vw-32px))] bg-popover border border-border rounded-xl overflow-hidden shadow-[0_24px_64px_-20px_rgba(46,42,69,0.45),0_2px_8px_rgba(46,42,69,0.08)]">
+          {/* dusk accent rail — the palette's warm↔cool signature */}
+          <div className="h-[3px] dusk-gradient" aria-hidden="true" />
+
+          <div className="p-5">
+            <div className="flex items-start gap-3.5">
+              {centered && <TraceXMark size={40} className="shrink-0 mt-1" />}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2.5">
+                  <span className="taxonomy text-primary">
+                    Step {step + 1} · {STEPS.length}
+                  </span>
+                  <span className="h-px flex-1 bg-border/70" aria-hidden="true" />
+                </div>
+                <h3 className="font-display text-lg font-semibold text-foreground mt-2 leading-snug">
+                  {current.title}
+                </h3>
+                <div className="mt-2.5 text-[13px] leading-relaxed text-muted-foreground space-y-2">
+                  {current.body}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => finish()}
+                aria-label="Skip tour"
+                className="size-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0 -mr-1"
+              >
+                <X className="size-4 mx-auto" />
+              </button>
             </div>
-            <h3 className="font-display text-base font-semibold text-foreground mt-1">{current.title}</h3>
-            <div className="mt-1.5 text-xs leading-relaxed text-muted-foreground space-y-1.5">{current.body}</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => finish()}
-            aria-label="Skip tour"
-            className="size-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0"
-          >
-            <X className="size-3.5 mx-auto" />
-          </button>
-        </div>
 
-        {/* progress dots */}
-        <div className="mt-3 flex items-center gap-1.5" aria-hidden="true">
-          {STEPS.map((_, i) => (
-            <span
-              key={i}
-              className={cn(
-                "h-1 rounded-full transition-all",
-                i === step ? "w-4 bg-primary" : i < step ? "w-1.5 bg-primary/50" : "w-1.5 bg-border"
-              )}
-            />
-          ))}
-        </div>
+            {/* progress rail */}
+            <div className="mt-4 flex items-center gap-1.5" aria-hidden="true">
+              {STEPS.map((_, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    "h-1 rounded-full transition-all duration-200",
+                    i === step ? "w-5 dusk-gradient" : i < step ? "w-1.5 bg-primary/40" : "w-1.5 bg-border"
+                  )}
+                />
+              ))}
+            </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          <span className="font-mono text-[9px] text-muted-foreground/60 hidden sm:inline">
-            esc skip · ←/→ walk
-          </span>
-          <div className="ml-auto flex items-center gap-2">
-            {step > 0 && (
-              <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1" onClick={() => gotoStep(step - 1)}>
-                <ArrowLeft className="size-3" /> Back
-              </Button>
-            )}
-            <Button
-              size="sm"
-              className="h-7 text-[11px] gap-1"
-              onClick={() => (isLast ? finish() : gotoStep(step + 1))}
-              autoFocus
-            >
-              {isLast ? (
-                <>
-                  <Check className="size-3" /> Finish
-                </>
-              ) : (
-                <>
-                  Next <ArrowRight className="size-3" />
-                </>
-              )}
-            </Button>
+            <div className="mt-4 flex items-center gap-2">
+              <span className="font-mono text-[10px] text-muted-foreground/70 hidden sm:inline">
+                esc skip · ← → walk
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                {step > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-3 text-xs gap-1.5"
+                    onClick={() => gotoStep(step - 1)}
+                  >
+                    <ArrowLeft className="size-3.5" /> Back
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  className="h-8 px-4 text-xs gap-1.5"
+                  onClick={() => (isLast ? finish() : gotoStep(step + 1))}
+                  autoFocus
+                >
+                  {isLast ? (
+                    <>
+                      <Check className="size-3.5" /> Finish
+                    </>
+                  ) : (
+                    <>
+                      Next <ArrowRight className="size-3.5" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

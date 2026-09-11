@@ -6,7 +6,6 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/app-state";
-import { useTheme } from "next-themes";
 import { TOPICS, getClaims, getInfluencers, getVolumeSeries, LANGUAGES, NOW } from "@/lib/mock";
 import { fmtCompact, fmtDayIST, relTime } from "@/lib/fmt";
 import {
@@ -32,8 +31,6 @@ import {
   Flame,
   ShieldAlert,
   AtSign,
-  Moon,
-  SunMedium,
   RotateCcw,
   FileDown,
   Send,
@@ -237,7 +234,6 @@ export function CommandPalette() {
     setCompareOpen,
     setDossierDay,
   } = useApp();
-  const { resolvedTheme, setTheme } = useTheme();
 
   const claims = getClaims({ ...filters, query: "" });
   const influencers = getInfluencers(filters, 6);
@@ -715,20 +711,6 @@ export function CommandPalette() {
             >
               <FlaskConical className="size-3.5 text-muted-foreground" />
               <span>Methodology &amp; data provenance</span>
-            </CommandItem>
-            <CommandItem
-              value="toggle theme dark light"
-              onSelect={() => {
-                setTheme(resolvedTheme === "light" ? "dark" : "light");
-                setOpen(false);
-              }}
-            >
-              {resolvedTheme === "light" ? (
-                <Moon className="size-3.5 text-muted-foreground" />
-              ) : (
-                <SunMedium className="size-3.5 text-muted-foreground" />
-              )}
-              <span>Toggle console illumination</span>
             </CommandItem>
           </CommandGroup>
         </CommandList>
