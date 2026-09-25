@@ -1,13 +1,28 @@
 "use client";
 
-/** Persistent left navigation spine. */
+/**
+ * Persistent left navigation spine — flexible across every viewport:
+ *  · lg−xl desktops: the familiar full rail (w-60) or a user-collapsed
+ *    icon rail (w-[60px]), toggle persisted per browser;
+ *  · below md: the same spine rides in a slide-over drawer summoned from
+ *    the top bar's menu button (single navigation surface everywhere).
+ * Visual design and hierarchy are unchanged — only the flexibility moved.
+ */
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/app-state";
-import { TraceXLogo } from "../common/TraceXLogo";
+import { TraceXLogo, TraceXMark } from "../common/TraceXLogo";
 import { Sparkline } from "../common/Sparkline";
 import { CHART } from "../common/ChartBits";
 import { getAlerts, getTopicById, getTopicSeries } from "@/lib/mock";
 import { fmtCompact } from "@/lib/fmt";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -21,6 +36,8 @@ import {
   Activity,
   Star,
   Command,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import type { ScreenId } from "@/lib/mock/types";
 
@@ -40,20 +57,44 @@ const NAV: {
   { id: "alerts", code: "08", label: "Alerts & Reports", icon: BellRing },
 ];
 
-export function Sidebar() {
+const COLLAPSE_KEY = "tracex.sidebar.collapsed";
+
+interface BodyProps {
+  collapsed: boolean;
+  /** drawer mode — items close the sheet on navigate */
+  sheet?: boolean;
+  onNavigate?: () => void;
+  onToggleCollapse?: () => void;
+}
+
+function SidebarBody({ collapsed, sheet = false, onNavigate, onToggleCollapse }: BodyProps) {
   const { screen, go, filters, watchlist } = useApp();
   const newAlerts = getAlerts().filter((a) => a.status === "New").length;
 
+  const nav = (id: ScreenId, opts?: { topicId?: string }) => {
+    go(id, opts);
+    if (sheet) onNavigate?.();
+  };
+
   return (
-    <aside className="hidden md:flex w-60 shrink-0 flex-col bg-sidebar border-r border-sidebar-border sticky top-0 h-screen">
+    <>
       {/* Brand */}
-      <div className="h-14 flex items-center px-4 border-b border-sidebar-border shrink-0">
-        <TraceXLogo />
+      <div
+        className={cn(
+          "h-14 flex items-center border-b border-sidebar-border shrink-0",
+          collapsed && !sheet ? "justify-center px-0" : "px-4"
+        )}
+      >
+        {collapsed && !sheet ? <TraceXMark size={28} /> : <TraceXLogo />}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2" aria-label="Console modules" data-tour="module-rail">
-        <div className="taxonomy text-muted-foreground/60 px-2 pb-2">Modules</div>
+      <nav
+        className="flex-1 overflow-y-auto py-3 px-2"
+        aria-label="Console modules"
+        data-tour="module-rail"
+      >
+        {!collapsed || sheet ? <div className="taxonomy text-muted-foreground/60 px-2 pb-2">Modules</div> : null}
         <ul className="space-y-0.5">
           {NAV.map((item) => {
             const active = screen === item.id;
@@ -61,11 +102,13 @@ export function Sidebar() {
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => go(item.id)}
+                  onClick={() => nav(item.id)}
                   aria-current={active ? "page" : undefined}
+                  title={item.label}
                   className={cn(
-                    "relative w-full flex items-center gap-2.5 px-2.5 h-9 rounded-md text-[13px]",
+                    "relative w-full flex items-center gap-2.5 h-9 rounded-md text-[13px]",
                     "transition-colors duration-100 cursor-pointer text-left",
+                    collapsed && !sheet ? "justify-center px-0" : "px-2.5",
                     active
                       ? "bg-sidebar-accent text-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/60"
@@ -78,15 +121,31 @@ export function Sidebar() {
                     className={cn("size-4 shrink-0", active ? "text-primary" : "text-muted-foreground")}
                     strokeWidth={1.75}
                   />
-                  <span className="font-mono text-[9px] text-muted-foreground/60 tabular-nums">{item.code}</span>
-                  <span className="truncate">{item.label}</span>
+                  {(!collapsed || sheet) && (
+                    <>
+                      <span className="font-mono text-[9px] text-muted-foreground/60 tabular-nums">{item.code}</span>
+                      <span className="truncate">{item.label}</span>
+                    </>
+                  )}
                   {item.id === "alerts" && newAlerts > 0 && (
-                    <span className="ml-auto font-mono text-[10px] tnum text-signal-red bg-signal-red/10 border border-signal-red/30 rounded-sm px-1.5 py-0.5">
+                    <span
+                      className={cn(
+                        "font-mono text-[10px] tnum text-signal-red bg-signal-red/10 border border-signal-red/30 rounded-sm px-1.5 py-0.5",
+                        collapsed && !sheet
+                          ? "absolute top-1 right-1.5 px-1 py-0 text-[9px]"
+                          : "ml-auto"
+                      )}
+                    >
                       {newAlerts}
                     </span>
                   )}
                   {item.id === "misinfo" && (
-                    <span className="ml-auto font-mono text-[10px] tnum text-signal-amber bg-signal-amber/10 border border-signal-amber/30 rounded-sm px-1.5 py-0.5">
+                    <span
+                      className={cn(
+                        "font-mono text-[10px] tnum text-signal-amber bg-signal-amber/10 border border-signal-amber/30 rounded-sm px-1.5 py-0.5",
+                        collapsed && !sheet ? "hidden" : "ml-auto"
+                      )}
+                    >
                       2
                     </span>
                   )}
@@ -97,8 +156,8 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      {/* Watchlist — starred narratives */}
-      {watchlist.length > 0 && (
+      {/* Watchlist — starred narratives (full rail / drawer only) */}
+      {(!collapsed || sheet) && watchlist.length > 0 && (
         <div className="border-t border-sidebar-border py-3 px-2 shrink-0" data-tour="watchlist">
           <div className="taxonomy text-muted-foreground/60 px-2 pb-2 flex items-center gap-1.5">
             <Star className="size-2.5 text-primary" />
@@ -114,7 +173,7 @@ export function Sidebar() {
                 <li key={id}>
                   <button
                     type="button"
-                    onClick={() => go("trends", { topicId: id })}
+                    onClick={() => nav("trends", { topicId: id })}
                     className="w-full flex items-center gap-2 px-2.5 h-9 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/60 transition-colors cursor-pointer group"
                     title={topic.gloss}
                   >
@@ -149,60 +208,157 @@ export function Sidebar() {
       )}
 
       {/* Hotkeys hint */}
-      <div className="border-t border-sidebar-border px-4 py-2.5 shrink-0 hidden lg:flex items-center gap-2 text-[9px] font-mono text-muted-foreground/50">
-        <Command className="size-2.5" />
-        <span>K palette</span>
-        <span className="mx-1 text-border">·</span>
-        <span>1–8 modules</span>
-      </div>
+      {!collapsed && !sheet && (
+        <div className="border-t border-sidebar-border px-4 py-2.5 shrink-0 hidden lg:flex items-center gap-2 text-[9px] font-mono text-muted-foreground/50">
+          <Command className="size-2.5" />
+          <span>K palette</span>
+          <span className="mx-1 text-border">·</span>
+          <span>1–8 modules</span>
+        </div>
+      )}
 
-      {/* Pipeline status */}
-      <div className="border-t border-sidebar-border p-3 space-y-2.5 shrink-0">
-        <div className="taxonomy text-muted-foreground/60">Pipeline status</div>
-        <div className="space-y-1.5 font-mono text-[10px] text-muted-foreground">
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <span className="size-1.5 rounded-[2px] bg-signal-green" />
-              X stream
-            </span>
-            <span className="tnum">214ms</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <span className="size-1.5 rounded-[2px] bg-signal-green" />
-              TG stream
-            </span>
-            <span className="tnum">188ms</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <Activity className="size-2.5 text-signal-cyan" />
-              Queue
-            </span>
-            <span className="tnum">1.2k/min</span>
-          </div>
-          <div className="flex items-center justify-between text-muted-foreground/70">
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="size-2.5" />
-              Privacy mode
-            </span>
-            <span>k≥50</span>
+      {/* Pipeline status (full rail / drawer only) */}
+      {(!collapsed || sheet) && (
+        <div className="border-t border-sidebar-border p-3 space-y-2.5 shrink-0">
+          <div className="taxonomy text-muted-foreground/60">Pipeline status</div>
+          <div className="space-y-1.5 font-mono text-[10px] text-muted-foreground">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span className="size-1.5 rounded-[2px] bg-signal-green" />
+                X stream
+              </span>
+              <span className="tnum">214ms</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span className="size-1.5 rounded-[2px] bg-signal-green" />
+                TG stream
+              </span>
+              <span className="tnum">188ms</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Activity className="size-2.5 text-signal-cyan" />
+                Queue
+              </span>
+              <span className="tnum">1.2k/min</span>
+            </div>
+            <div className="flex items-center justify-between text-muted-foreground/70">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="size-2.5" />
+                Privacy mode
+              </span>
+              <span>k≥50</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Analyst */}
-      <div className="border-t border-sidebar-border p-3 flex items-center gap-2.5 shrink-0">
-        <span className="size-8 rounded-md bg-muted border border-border flex items-center justify-center font-mono text-[11px] text-primary font-semibold">
+      <div
+        className={cn(
+          "border-t border-sidebar-border p-3 flex items-center gap-2.5 shrink-0",
+          collapsed && !sheet ? "justify-center p-2" : ""
+        )}
+      >
+        <span
+          className={cn(
+            "size-8 rounded-md bg-muted border border-border flex items-center justify-center font-mono text-[11px] text-primary font-semibold",
+            collapsed && !sheet ? "shrink-0" : ""
+          )}
+          title="A. Sharma — Analyst · L2"
+        >
           AS
         </span>
-        <div className="min-w-0 leading-tight">
-          <div className="text-xs font-medium text-foreground truncate">A. Sharma</div>
-          <div className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
-            Analyst · L2
+        {(!collapsed || sheet) && (
+          <div className="min-w-0 leading-tight">
+            <div className="text-xs font-medium text-foreground truncate">A. Sharma</div>
+            <div className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
+              Analyst · L2
+            </div>
           </div>
-        </div>
+        )}
       </div>
-    </aside>
+
+      {/* Rail-width toggle (desktop spine only) */}
+      {!sheet && onToggleCollapse && (
+        <div className="border-t border-sidebar-border shrink-0">
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-pressed={collapsed}
+            className={cn(
+              "w-full h-9 flex items-center gap-2.5 text-[10px] font-mono text-muted-foreground/60",
+              "hover:text-foreground hover:bg-sidebar-accent/40 transition-colors cursor-pointer",
+              collapsed ? "justify-center px-0" : "px-4"
+            )}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="size-3.5" />
+            ) : (
+              <>
+                <PanelLeftClose className="size-3.5" />
+                <span>Collapse</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+export function Sidebar({
+  mobileOpen,
+  onMobileOpenChange,
+}: {
+  mobileOpen: boolean;
+  onMobileOpenChange: (open: boolean) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(
+    () => typeof window !== "undefined" && window.localStorage.getItem(COLLAPSE_KEY) === "1"
+  );
+
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      } catch {
+        /* private mode — best effort */
+      }
+      return next;
+    });
+
+  return (
+    <>
+      {/* Desktop spine — full rail ↔ icon rail, width eases between states */}
+      <aside
+        className={cn(
+          "hidden md:flex shrink-0 flex-col bg-sidebar border-r border-sidebar-border sticky top-0 h-screen",
+          "transition-[width] duration-200 ease-out",
+          collapsed ? "w-[60px]" : "w-60"
+        )}
+      >
+        <SidebarBody collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
+      </aside>
+
+      {/* Mobile drawer — the same spine, summoned from the top-bar menu button */}
+      <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
+        <SheetContent
+          side="left"
+          className="w-72 p-0 gap-0 bg-sidebar border-r border-sidebar-border shadow-xl"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Console navigation</SheetTitle>
+            <SheetDescription>Modules, watchlist and pipeline status</SheetDescription>
+          </SheetHeader>
+          <div className="flex flex-col min-h-0 h-full overflow-y-auto">
+            <SidebarBody collapsed={false} sheet onNavigate={() => onMobileOpenChange(false)} />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }

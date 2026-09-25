@@ -1,17 +1,42 @@
 "use client";
 
-/** Top command bar: platform, range, search, languages, live clock. */
+/**
+ * Top command bar: category / time-window / language filter dropdowns,
+ * global search, live clock. The filter bank is a trio of compact
+ * dropdowns sharing one trigger language; the bar wraps gracefully on
+ * narrow viewports (filters claim their own row below the search).
+ */
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/app-state";
 import { LANGUAGES } from "@/lib/mock";
 import { fmtClockIST } from "@/lib/fmt";
 import { useNow } from "../common/Skeletons";
-import { LiveDot, Chip } from "../common/primitives";
+import { LiveDot } from "../common/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Search, RotateCw, Send, CalendarClock, X as XIcon, Volume2, VolumeX, Bookmark, BookmarkPlus } from "lucide-react";
+import { Popover, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Search,
+  RotateCw,
+  Send,
+  CalendarClock,
+  X as XIcon,
+  Volume2,
+  VolumeX,
+  ChevronDown,
+  Languages,
+  Menu,
+  Check,
+  SlidersHorizontal,
+} from "lucide-react";
 import { toast } from "sonner";
 import { isAudioEnabled, setAudioEnabled, playCriticalCue } from "@/lib/alert-cue";
 import { CommandPalette } from "./CommandPalette";
@@ -37,66 +62,277 @@ function XGlyph({ className }: { className?: string }) {
   );
 }
 
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  className,
-}: {
-  options: { value: T; label: React.ReactNode; title?: string }[];
-  value: T;
-  onChange: (v: T) => void;
-  className?: string;
-}) {
+/* ------------------------------------------------------------------ */
+/* Filter-bank dropdown trio — one shared trigger language             */
+/* ------------------------------------------------------------------ */
+
+function FilterTrigger({
+  children,
+  active,
+  title,
+  ...props
+}: React.ComponentPropsWithoutRef<"button"> & { active: boolean }) {
   return (
-    <div
-      role="group"
-      className={cn("inline-flex items-center bg-background border border-border rounded-md p-0.5 gap-0.5", className)}
+    <button
+      type="button"
+      title={title}
+      className={cn(
+        "h-7 px-2.5 rounded-md border inline-flex items-center gap-1.5 text-[11px] font-medium",
+        "transition-colors duration-100 cursor-pointer whitespace-nowrap",
+        active
+          ? "bg-secondary text-foreground border-border"
+          : "bg-background text-foreground border-border hover:border-muted-foreground/40"
+      )}
+      {...props}
     >
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          title={opt.title}
-          onClick={() => onChange(opt.value)}
-          className={cn(
-            "h-7 px-2.5 rounded-sm text-[11px] font-medium inline-flex items-center gap-1.5",
-            "transition-colors duration-100 cursor-pointer whitespace-nowrap",
-            value === opt.value
-              ? "bg-secondary text-foreground border border-border"
-              : "text-muted-foreground hover:text-foreground border border-transparent"
-          )}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
+      {children}
+    </button>
   );
 }
 
-export function TopBar() {
-  const {
-    filters,
-    setPlatform,
-    setRange,
-    setCustomDays,
-    toggleLanguage,
-    clearLanguages,
-    setQuery,
-    screen,
-    savedViews,
-    saveView,
-    applyView,
-    deleteView,
-    isViewActive,
-  } = useApp();
-  const now = useNow(1000);
-  const [searchText, setSearchText] = useState(filters.query);
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <ChevronDown
+      className={cn("size-3 text-muted-foreground transition-transform duration-150", open && "rotate-180")}
+      aria-hidden="true"
+    />
+  );
+}
+
+const PLATFORM_META: {
+  value: Platform;
+  label: string;
+  glyph: React.ReactNode;
+  hint: string;
+}[] = [
+  {
+    value: "all",
+    label: "All",
+    glyph: <span className="size-2 rounded-[2px] bg-signal-cyan inline-block" />,
+    hint: "X + Telegram",
+  },
+  { value: "x", label: "X", glyph: <XGlyph />, hint: "X (Twitter)" },
+  { value: "telegram", label: "Telegram", glyph: <Send className="size-3" />, hint: "Telegram only" },
+];
+
+function CategoryFilter() {
+  const { filters, setPlatform } = useApp();
+  const [open, setOpen] = useState(false);
+  const meta = PLATFORM_META.find((p) => p.value === filters.platform) ?? PLATFORM_META[0];
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <FilterTrigger active={filters.platform !== "all"} title="Filter by source category">
+          {meta.glyph}
+          <span>{meta.label}</span>
+          <Chevron open={open} />
+        </FilterTrigger>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-52">
+        <div className="taxonomy text-muted-foreground/70 px-2 py-1.5 select-none">Categories</div>
+        {PLATFORM_META.map((p) => (
+          <DropdownMenuItem
+            key={p.value}
+            onSelect={() => setPlatform(p.value)}
+            className="gap-2.5 text-xs cursor-pointer"
+          >
+            {p.glyph}
+            <span>{p.label}</span>
+            <span className="ml-auto text-[10px] text-muted-foreground/70 font-mono">{p.hint}</span>
+            <Check
+              className={cn(
+                "size-3.5 text-primary shrink-0",
+                filters.platform === p.value ? "opacity-100" : "opacity-0"
+              )}
+            />
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+const RANGE_META: { value: RangeKey; label: string; hint: string }[] = [
+  { value: "24h", label: "24 hours", hint: "rolling day" },
+  { value: "7d", label: "7 days", hint: "past week" },
+  { value: "30d", label: "30 days", hint: "past month" },
+];
+
+function DaysFilter() {
+  const { filters, setRange, setCustomDays } = useApp();
+  const [open, setOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [customValue, setCustomValue] = useState(String(filters.customDays));
-  const [saveViewOpen, setSaveViewOpen] = useState(false);
-  const [viewName, setViewName] = useState("");
-  const [rememberScreen, setRememberScreen] = useState(true);
+  /* transit flag — when the menu hands over to the custom-window popover,
+     the menu must NOT return focus to the trigger (the focusin would hit
+     the popover's outside-layer dismissal and instantly close it) */
+  const openingCustomRef = useRef(false);
+
+  const label =
+    filters.range === "custom" ? `${filters.customDays} days` : RANGE_META.find((r) => r.value === filters.range)?.label ?? "24 hours";
+
+  return (
+    <Popover
+      open={customOpen}
+      onOpenChange={(v) => {
+        setCustomOpen(v);
+      }}
+    >
+      <PopoverAnchor asChild>
+        <span className="inline-flex">
+          <DropdownMenu open={open} onOpenChange={setOpen}>
+            <DropdownMenuTrigger asChild>
+              <FilterTrigger active={filters.range !== "24h"} title="Time window">
+                <CalendarClock className="size-3.5 text-muted-foreground" />
+                <span>{label}</span>
+                <Chevron open={open} />
+              </FilterTrigger>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="w-52"
+              onCloseAutoFocus={(e) => {
+                if (openingCustomRef.current) e.preventDefault();
+              }}
+            >
+          <div className="taxonomy text-muted-foreground/70 px-2 py-1.5 select-none">Time window</div>
+          {RANGE_META.map((r) => (
+            <DropdownMenuItem
+              key={r.value}
+              onSelect={() => setRange(r.value)}
+              className="gap-2.5 text-xs cursor-pointer"
+            >
+              <span>{r.label}</span>
+              <span className="ml-auto text-[10px] text-muted-foreground/70 font-mono">{r.hint}</span>
+              <Check
+                className={cn(
+                  "size-3.5 text-primary shrink-0",
+                  filters.range === r.value ? "opacity-100" : "opacity-0"
+                )}
+              />
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() => {
+              openingCustomRef.current = true;
+              setOpen(false);
+              window.setTimeout(() => {
+                openingCustomRef.current = false;
+                setCustomOpen(true);
+              }, 260);
+            }}
+            className="gap-2.5 text-xs cursor-pointer"
+          >
+            <SlidersHorizontal className="size-3.5 text-muted-foreground" />
+            <span>Custom window…</span>
+            <span className="ml-auto text-[10px] font-mono text-muted-foreground/70">3–90d</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+        </DropdownMenu>
+      </span>
+      </PopoverAnchor>
+      <PopoverContent align="start" className="w-64 p-3">
+        <div className="taxonomy text-muted-foreground mb-2">Custom window</div>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={3}
+            max={90}
+            value={customValue}
+            autoFocus
+            onChange={(e) => setCustomValue(e.target.value)}
+            className="h-8 font-mono text-xs"
+          />
+          <span className="text-xs text-muted-foreground">days</span>
+        </div>
+        <Button
+          size="sm"
+          className="mt-3 w-full h-7 text-[11px]"
+          onClick={() => {
+            const d = Math.min(90, Math.max(3, parseInt(customValue) || 14));
+            setCustomDays(d);
+            setCustomOpen(false);
+          }}
+        >
+          Apply window
+        </Button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function LanguageFilter() {
+  const { filters, toggleLanguage, clearLanguages } = useApp();
+  const [open, setOpen] = useState(false);
+  const n = filters.languages.length;
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <FilterTrigger active={n > 0} title="Language filter">
+          <Languages className="size-3.5 text-muted-foreground" />
+          <span>Languages</span>
+          {n > 0 && (
+            <span className="font-mono text-[10px] tnum text-primary border border-primary/35 bg-primary/10 rounded-sm px-1 leading-4">
+              {n}
+            </span>
+          )}
+          <Chevron open={open} />
+        </FilterTrigger>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-60">
+        <div className="taxonomy text-muted-foreground/70 px-2 py-1.5 flex items-center justify-between select-none">
+          <span>Languages</span>
+          <span className="font-mono text-[9px] tnum text-muted-foreground/70">
+            {n}/{LANGUAGES.length} selected
+          </span>
+        </div>
+        {LANGUAGES.map((lang) => {
+          const active = filters.languages.includes(lang.code);
+          return (
+            <DropdownMenuItem
+              key={lang.code}
+              onSelect={(e) => {
+                e.preventDefault(); // multi-select — keep the menu open
+                toggleLanguage(lang.code);
+              }}
+              title={`${lang.label} — ${lang.share}% of corpus`}
+              className="gap-2.5 text-xs cursor-pointer"
+            >
+              <Check className={cn("size-3.5 text-primary shrink-0", active ? "opacity-100" : "opacity-0")} />
+              <span>{lang.native}</span>
+              <span className="ml-auto text-[10px] font-mono text-muted-foreground/70 tnum">{lang.share}%</span>
+            </DropdownMenuItem>
+          );
+        })}
+        {n > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                clearLanguages();
+              }}
+              className="gap-2.5 text-xs cursor-pointer text-signal-red focus:text-signal-red"
+            >
+              <XIcon className="size-3.5" />
+              <span>Clear language filter</span>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
+  const { filters, setQuery, screen } = useApp();
+  const now = useNow(1000);
+  const [searchText, setSearchText] = useState(filters.query);
   /* audio cue toggle — lazy client-side init (TopBar mounts post-boot-splash,
      so the initializer never runs during SSR) */
   const [audioOn, setAudioOn] = useState(() => (typeof window !== "undefined" && isAudioEnabled()));
@@ -112,7 +348,18 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border shrink-0">
-      <div className="h-14 flex items-center gap-3 px-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-h-14 px-4 py-2">
+        {/* Mobile drawer trigger */}
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          className="md:hidden size-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-colors cursor-pointer shrink-0"
+          title="Open navigation"
+          aria-label="Open navigation"
+        >
+          <Menu className="size-4" />
+        </button>
+
         {/* Screen identifier */}
         <div className="hidden lg:flex items-center gap-2 shrink-0 font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
           <span className="text-primary">MODULE {meta.code}</span>
@@ -121,7 +368,7 @@ export function TopBar() {
         </div>
 
         {/* Global search */}
-        <div className="relative flex-1 min-w-24 max-w-md">
+        <div className="relative flex-1 min-w-32 max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
           <Input
             value={searchText}
@@ -141,79 +388,14 @@ export function TopBar() {
           )}
         </div>
 
-        {/* Platform + range — the filter bank core (guided-tour anchor) */}
+        {/* Filter bank — category · window · languages (guided-tour anchor) */}
         <div className="flex items-center gap-2 shrink-0" data-tour="filter-bank">
-          <Segmented<Platform>
-            value={filters.platform}
-            onChange={setPlatform}
-            options={[
-              {
-                value: "all",
-                label: (
-                  <>
-                    <span className="size-2 rounded-[2px] bg-signal-cyan inline-block" /> ALL
-                  </>
-                ),
-                title: "Both platforms",
-              },
-              { value: "x", label: <><XGlyph /> X</>, title: "X (Twitter) only" },
-              { value: "telegram", label: <><Send className="size-3" /> TG</>, title: "Telegram only" },
-            ]}
-          />
-
-        {/* Range */}
-        <div className="hidden sm:flex items-center gap-2">
-          <Segmented<RangeKey>
-            value={filters.range}
-            onChange={(r) => r !== "custom" && setRange(r)}
-            options={[
-              { value: "24h", label: "24H" },
-              { value: "7d", label: "7D" },
-              { value: "30d", label: "30D" },
-            ]}
-          />
-          <Popover open={customOpen} onOpenChange={setCustomOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant={filters.range === "custom" ? "secondary" : "outline"}
-                size="sm"
-                className={cn("h-7 px-2.5 text-[11px] gap-1.5", filters.range !== "custom" && "text-muted-foreground")}
-                title="Custom range"
-              >
-                <CalendarClock className="size-3.5" />
-                {filters.range === "custom" ? `${filters.customDays}D` : "CUSTOM"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 p-3">
-              <div className="taxonomy text-muted-foreground mb-2">Custom window</div>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={3}
-                  max={90}
-                  value={customValue}
-                  onChange={(e) => setCustomValue(e.target.value)}
-                  className="h-8 font-mono text-xs"
-                />
-                <span className="text-xs text-muted-foreground">days</span>
-              </div>
-              <Button
-                size="sm"
-                className="mt-3 w-full h-7 text-[11px]"
-                onClick={() => {
-                  const d = Math.min(90, Math.max(3, parseInt(customValue) || 14));
-                  setCustomDays(d);
-                  setCustomOpen(false);
-                }}
-              >
-                Apply window
-              </Button>
-            </PopoverContent>
-          </Popover>
-        </div>
+          <CategoryFilter />
+          <DaysFilter />
+          <LanguageFilter />
         </div>
 
-        <div className="ml-auto flex items-center gap-3 shrink-0">
+        <div className="ml-auto flex items-center gap-2 shrink-0">
           <CommandPalette />
           <AlertsBell />
           <LiveDot className="hidden xl:inline-flex" />
@@ -257,132 +439,6 @@ export function TopBar() {
             <RotateCw className="size-3.5" />
           </button>
         </div>
-      </div>
-
-      {/* Saved views + language chips row */}
-      <div className="h-9 flex items-center gap-2 px-4 border-t border-border/60 overflow-x-auto">
-        {/* Saved filter-bank presets (v0.12) */}
-        {savedViews.length > 0 && (
-          <>
-            <span className="taxonomy text-primary/70 shrink-0 hidden sm:inline">Views</span>
-            {savedViews.map((v) => (
-              <span key={v.id} className="relative group/view shrink-0">
-                <button
-                  type="button"
-                  onClick={() => applyView(v.id)}
-                  title={`Apply view “${v.name}” — ${v.filters.platform.toUpperCase()} · ${v.filters.range}${v.filters.languages.length ? ` · ${v.filters.languages.length} langs` : ""}${v.screen ? ` · ${v.screen} module` : ""}`}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 h-5.5 px-2 rounded-sm text-[10px] font-mono cursor-pointer transition-colors whitespace-nowrap",
-                    isViewActive(v)
-                      ? "bg-primary/15 text-primary border border-primary/40"
-                      : "text-muted-foreground border border-border hover:text-foreground hover:border-muted-foreground/40"
-                  )}
-                >
-                  <Bookmark className="size-2.5" />
-                  {v.name}
-                  {v.screen && <span className="text-muted-foreground/60">· {v.screen}</span>}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    deleteView(v.id);
-                    toast(`View “${v.name}” removed`);
-                  }}
-                  aria-label={`Delete view ${v.name}`}
-                  title={`Delete view “${v.name}”`}
-                  className="absolute -top-1 -right-1 size-3 rounded-[3px] bg-signal-red/90 text-white hidden group-hover/view:flex items-center justify-center cursor-pointer"
-                >
-                  <XIcon className="size-2" />
-                </button>
-              </span>
-            ))}
-            <span className="w-px h-3.5 bg-border shrink-0 hidden sm:block" />
-          </>
-        )}
-
-        {/* Save current filter bank as a named view */}
-        <Popover open={saveViewOpen} onOpenChange={setSaveViewOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              title="Save the current filter bank as a named view"
-              aria-label="Save current view"
-              className="inline-flex items-center gap-1 h-5.5 px-2 rounded-sm text-[10px] font-mono text-muted-foreground border border-dashed border-border hover:text-primary hover:border-primary/50 transition-colors cursor-pointer shrink-0"
-            >
-              <BookmarkPlus className="size-2.5" /> Save view
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-3">
-            <div className="taxonomy text-muted-foreground mb-2">Save current filter bank</div>
-            <div className="text-[10px] font-mono text-muted-foreground/80 mb-2 leading-relaxed">
-              {filters.platform.toUpperCase()} · {filters.range === "custom" ? `${filters.customDays}D` : filters.range.toUpperCase()}
-              {filters.languages.length ? ` · ${filters.languages.length} lang${filters.languages.length === 1 ? "" : "s"}` : ""}
-              {filters.query ? ` · “${filters.query.slice(0, 14)}…”` : ""} · module {screen}
-            </div>
-            <Input
-              value={viewName}
-              onChange={(e) => setViewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  saveView(viewName, rememberScreen ? screen : undefined);
-                  setViewName("");
-                  setSaveViewOpen(false);
-                  toast("View saved", { description: "Reachable from the view rail and ⌘K." });
-                }
-              }}
-              placeholder="e.g. High-risk watch · 30d"
-              maxLength={40}
-              className="h-8 text-xs"
-            />
-            <div className="flex items-center justify-between mt-2">
-              <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberScreen}
-                  onChange={(e) => setRememberScreen(e.target.checked)}
-                  className="accent-primary size-3"
-                />
-                remember module
-              </label>
-              <Button
-                size="sm"
-                className="h-7 text-[11px]"
-                onClick={() => {
-                  saveView(viewName, rememberScreen ? screen : undefined);
-                  setViewName("");
-                  setSaveViewOpen(false);
-                  toast("View saved", { description: "Reachable from the view rail and ⌘K." });
-                }}
-              >
-                Save
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        <span className="taxonomy text-muted-foreground/60 shrink-0 hidden sm:inline">Languages</span>
-        {LANGUAGES.map((lang) => (
-          <Chip
-            key={lang.code}
-            active={filters.languages.includes(lang.code)}
-            onClick={() => toggleLanguage(lang.code)}
-            title={`${lang.label} — ${lang.share}% of corpus`}
-          >
-            {lang.native}
-          </Chip>
-        ))}
-        {filters.languages.length > 0 && (
-          <button
-            type="button"
-            onClick={clearLanguages}
-            className="text-[10px] font-mono text-muted-foreground hover:text-signal-red shrink-0 cursor-pointer uppercase tracking-wider"
-          >
-            ✕ clear
-          </button>
-        )}
-        <span className="ml-auto hidden lg:inline font-mono text-[10px] text-muted-foreground/80 shrink-0">
-          {filters.languages.length}/{LANGUAGES.length} selected
-        </span>
       </div>
     </header>
   );

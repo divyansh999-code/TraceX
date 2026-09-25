@@ -29,27 +29,17 @@ import { BotScreen } from "./screens/BotScreen";
 import { MisinfoScreen } from "./screens/MisinfoScreen";
 import { AlertsScreen } from "./screens/AlertsScreen";
 import type { ScreenId } from "@/lib/mock/types";
-import {
-  LayoutDashboard,
-  TrendingUp,
-  HeartPulse,
-  Users,
-  Network,
-  Bot,
-  Radar,
-  BellRing,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
 
-const MOBILE_NAV: { id: ScreenId; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "trends", label: "Trends", icon: TrendingUp },
-  { id: "sentiment", label: "Sentiment", icon: HeartPulse },
-  { id: "demographics", label: "People", icon: Users },
-  { id: "network", label: "Network", icon: Network },
-  { id: "bots", label: "Bots", icon: Bot },
-  { id: "misinfo", label: "Misinfo", icon: Radar },
-  { id: "alerts", label: "Alerts", icon: BellRing },
+/** Hotkey order — module keys 1–8 (mirrors the sidebar rail order). */
+const HOTKEY_ORDER: ScreenId[] = [
+  "overview",
+  "trends",
+  "sentiment",
+  "demographics",
+  "network",
+  "bots",
+  "misinfo",
+  "alerts",
 ];
 
 function ModuleCanvas() {
@@ -77,33 +67,6 @@ function ModuleCanvas() {
   );
 }
 
-/** Mobile module switcher (tablet/field posture). */
-function MobileNav() {
-  const { screen, go } = useApp();
-  return (
-    <nav className="md:hidden border-b border-border bg-card/60 backdrop-blur-sm overflow-x-auto" aria-label="Modules">
-      <div className="flex items-center gap-1 px-3 py-2 w-max">
-        {MOBILE_NAV.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => go(item.id)}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer",
-              screen === item.id
-                ? "bg-secondary text-foreground border border-border font-medium"
-                : "text-muted-foreground border border-transparent hover:text-foreground"
-            )}
-          >
-            <item.icon className="size-3.5" strokeWidth={1.75} />
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </nav>
-  );
-}
-
 /** Global hotkeys: 1–8 switch modules (muted while the guided tour runs). */
 function ModuleHotkeys() {
   const { go } = useApp();
@@ -116,7 +79,7 @@ function ModuleHotkeys() {
       if (document.body.classList.contains("tour-active")) return;
       const idx = parseInt(e.key, 10);
       if (idx >= 1 && idx <= 8) {
-        go(MOBILE_NAV[idx - 1].id);
+        go(HOTKEY_ORDER[idx - 1]);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -156,12 +119,13 @@ function DocumentTitle() {
 
 function Console() {
   const { reportOpen, setReportOpen } = useApp();
+  /* the sidebar drawer rides below md — one navigation surface everywhere */
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   return (
     <div className="flex min-h-screen min-w-0 tracex-root">
-      <Sidebar />
+      <Sidebar mobileOpen={mobileNavOpen} onMobileOpenChange={setMobileNavOpen} />
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        <TopBar />
-        <MobileNav />
+        <TopBar onOpenMobileNav={() => setMobileNavOpen(true)} />
         <main className="flex-1 px-4 py-5 min-w-0 w-full">
           <ModuleHotkeys />
           <AlertCueListener />

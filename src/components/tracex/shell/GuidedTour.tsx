@@ -103,7 +103,7 @@ const STEPS: TourStep[] = [
     body: (
       <p>
         Drag the playhead or hit <span className="font-mono text-foreground">▶</span> to rewind the corpus:
-        the chart, KPIs, trending table and heat strip all re-derive <span className="text-foreground">as
+        the chart, KPIs and trending table all re-derive <span className="text-foreground">as
         of</span> any point in the window, with the upcoming window ghosted ahead. Keys{" "}
         <span className="font-mono text-foreground">←/→</span> seek while playing and{" "}
         <span className="font-mono text-foreground">⏎</span> summons the day dossier for the

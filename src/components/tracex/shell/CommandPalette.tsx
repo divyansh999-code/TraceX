@@ -36,8 +36,6 @@ import {
   Send,
   Globe,
   Languages,
-  CornerDownLeft,
-  Bookmark,
   Footprints,
   FlaskConical,
   GitCompareArrows,
@@ -226,9 +224,6 @@ export function CommandPalette() {
     watchlist,
     setReportOpen,
     setMethodologyOpen,
-    savedViews,
-    applyView,
-    isViewActive,
     compareIds,
     setComparePair,
     setCompareOpen,
@@ -294,24 +289,10 @@ export function CommandPalette() {
     setOpen(false);
   };
 
-  const applySavedView = (id: string, name: string) => {
-    applyView(id);
-    setOpen(false);
-    toast(`View “${name}” applied`, { description: "Filter bank restored from saved view." });
-  };
-
   return (
     <>
-      {/* Trigger hint — lives in the top bar visual language */}
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="hidden lg:inline-flex items-center gap-2 h-7 px-2.5 rounded-md border border-border bg-muted/40 text-[11px] text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-colors cursor-pointer"
-        title="Open command palette"
-      >
-        <CornerDownLeft className="size-3" />
-        <span className="font-mono">⌘K</span>
-      </button>
+      {/* Palette opens via the ⌘K hotkey (and the sidebar/cheatsheet hints) —
+          the hotkey listener below owns it; no visible trigger needed. */}
 
       <CommandDialog
         open={open}
@@ -602,30 +583,6 @@ export function CommandPalette() {
           </CommandGroup>
 
           <CommandSeparator />
-
-          {savedViews.length > 0 && (
-            <>
-              <CommandGroup heading="Saved views — filter-bank presets">
-                {savedViews.map((v) => (
-                  <CommandItem
-                    key={v.id}
-                    value={`view ${v.name} ${v.filters.platform} ${v.filters.range}${v.screen ? ` ${v.screen}` : ""}`}
-                    onSelect={() => applySavedView(v.id, v.name)}
-                  >
-                    <Bookmark className={isViewActive(v) ? "size-3.5 fill-primary text-primary" : "size-3.5 text-muted-foreground"} />
-                    <span className="truncate max-w-48">{v.name}</span>
-                    <span className="text-[10px] font-mono text-muted-foreground truncate hidden sm:inline">
-                      {v.filters.platform.toUpperCase()} ·{" "}
-                      {v.filters.range === "custom" ? `${v.filters.customDays}D` : v.filters.range.toUpperCase()}
-                      {v.screen ? ` · ${v.screen}` : ""}
-                    </span>
-                    {isViewActive(v) && <CommandShortcut>active</CommandShortcut>}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-              <CommandSeparator />
-            </>
-          )}
 
           <CommandGroup heading="Filter bank &amp; actions">
             {(Object.keys(PLATFORM_META) as (keyof typeof PLATFORM_META)[]).map((p) => {

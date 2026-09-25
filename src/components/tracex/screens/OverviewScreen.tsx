@@ -16,7 +16,7 @@ import {
   getInfluencers,
   NOW,
 } from "@/lib/mock";
-import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned, fmtFull } from "@/lib/fmt";
+import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned } from "@/lib/fmt";
 import { cn } from "@/lib/utils";
 import { Panel, Badge, Delta, ScoreBar, SeverityDot, LiveDot, Legend, Taxonomy } from "../common/primitives";
 import { KpiCard } from "../common/KpiCard";
@@ -24,8 +24,7 @@ import { Sparkline } from "../common/Sparkline";
 import { ScreenHeader } from "../common/ScreenHeader";
 import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
 import { useRefresh, useNow, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
-import { HeatCalendar, type HeatDay } from "../common/HeatCalendar";
-import { DayDossier } from "../common/DayDossier";
+import type { HeatDay } from "../common/HeatCalendar";
 import { TimeMachine } from "../common/TimeMachine";
 import {
   ResponsiveContainer,
@@ -285,23 +284,17 @@ function ModuleStrip() {
 /* ---------------- Main screen ---------------- */
 
 export function OverviewScreen() {
-  const { filters, go, setRange, alertsFeed, setDossierDay } = useApp();
+  const { filters, go, alertsFeed, setDossierDay } = useApp();
   const ready = useRefresh("overview");
 
   const kpis = useMemo(() => getKpis(filters), [filters]);
   const series = useMemo(() => getVolumeSeries(filters), [filters]);
-  /* 30-day corpus heat strip — always 30d context regardless of active range */
+  /* 30-day calendar days — the replay playhead maps its bucket onto the
+     containing day to summon the day dossier (always 30d context) */
   const heatDays = useMemo<HeatDay[]>(
     () => getVolumeSeries({ ...filters, range: "30d" }).map((p) => ({ t: p.t, total: p.total, spike: p.spike, label: p.label })),
     [filters]
   );
-  const onHeatDay = (day: HeatDay) => {
-    setRange("30d");
-    go("trends");
-    toast(`Corpus view: ${day.label}`, {
-      description: `${fmtFull(day.total)} posts on that day — 30-day window loaded in Trend Explorer.`,
-    });
-  };
   const topics = useMemo(
     () =>
       effectiveTopics(filters)
@@ -529,24 +522,6 @@ export function OverviewScreen() {
           footnote={<span className="text-signal-red">{isLive ? "2 critical · 2 high" : `timeline to ${replayLabel}`}</span>}
         />
       </div>
-
-      {/* 30-day corpus intensity strip */}
-      <Panel
-        title="Corpus intensity"
-        icon={Cpu}
-        sub={isLive ? "30-day daily volume · reflects filter bank" : `30-day volume · playhead ${replayLabel}`}
-        right={
-          <span className="font-mono text-[10px] text-muted-foreground/70 hidden sm:inline">
-            click a day → dossier
-          </span>
-        }
-      >
-        <HeatCalendar
-          days={heatDays}
-          activeT={isLive ? undefined : (viewEnd?.t ?? undefined)}
-          renderDayDossier={(day) => <DayDossier day={day} filters={filters} onOpenTrends={onHeatDay} />}
-        />
-      </Panel>
 
       {/* Volume × sentiment band + live alerts */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
