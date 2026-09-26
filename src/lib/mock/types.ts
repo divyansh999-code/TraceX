@@ -17,9 +17,24 @@ export type ScreenId =
   | "sentiment"
   | "demographics"
   | "network"
-  | "bots"
-  | "misinfo"
+  | "integrity"
   | "alerts";
+
+/** The Information Integrity module (06) merges the former Bot Detection
+ *  and Misinformation Radar consoles into one operating view — this union
+ *  selects which half is presented (bots forensics vs claims radar). */
+export type IntegrityView = "bots" | "claims";
+
+/** Human labels for every screen id — tooltips, alerts and doc titles. */
+export const SCREEN_LABELS: Record<ScreenId, string> = {
+  overview: "Overview — Intelligence Fusion",
+  trends: "Trend Explorer",
+  sentiment: "Sentiment & Emotion",
+  demographics: "Demographics",
+  network: "Network & Influence",
+  integrity: "Information Integrity",
+  alerts: "Alerts & Reports",
+};
 
 export type SentimentKind = "positive" | "neutral" | "negative";
 
@@ -249,6 +264,9 @@ export interface IntelligenceAlert {
   status: AlertStatus;
   topicLabel?: string;
   linkScreen?: ScreenId;
+  /** Integrity-module view hint — bot-cluster alerts land on the bots
+   *  forensics view, misinformation alerts on the claims radar. */
+  linkView?: IntegrityView;
 }
 
 export interface SamplePost {

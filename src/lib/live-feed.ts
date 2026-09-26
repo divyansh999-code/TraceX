@@ -43,7 +43,8 @@ const TEMPLATES: Omit<IntelligenceAlert, "id" | "t">[] = [
     title: "Amplification burst — TX-88 fringe",
     detail: "19 sibling accounts posted within 6s; escalation queued.",
     status: "New",
-    linkScreen: "bots",
+    linkScreen: "integrity",
+    linkView: "bots",
   },
   {
     type: "misinformation",
@@ -51,7 +52,8 @@ const TEMPLATES: Omit<IntelligenceAlert, "id" | "t">[] = [
     title: "Claim re-emergence flagged",
     detail: "Disputed claim text re-matched at 0.92 similarity.",
     status: "New",
-    linkScreen: "misinfo",
+    linkScreen: "integrity",
+    linkView: "claims",
   },
   {
     type: "sentiment-shift",

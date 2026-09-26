@@ -11,6 +11,7 @@ import { useApp } from "@/lib/app-state";
 import { NOW, type AlertType } from "@/lib/mock";
 import { relTime } from "@/lib/fmt";
 import { cn } from "@/lib/utils";
+import { SCREEN_LABELS } from "@/lib/mock/types";
 import { SeverityDot, Badge, Taxonomy, type Tone } from "../common/primitives";
 import { useNow } from "../common/Skeletons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -28,8 +29,8 @@ export function AlertsBell() {
   const { go, alertsFeed: feed, alertUnread: unread, markAlertsRead } = useApp();
   const now = useNow(30_000);
 
-  const jump = (screen: ScreenId | undefined) => {
-    if (screen) go(screen);
+  const jump = (screen: ScreenId | undefined, view?: "bots" | "claims") => {
+    if (screen) go(screen, view ? { view } : undefined);
   };
 
   return (
@@ -73,12 +74,16 @@ export function AlertsBell() {
             <button
               key={a.id}
               type="button"
-              onClick={() => jump(a.linkScreen)}
+              onClick={() => jump(a.linkScreen, a.linkView)}
               className={cn(
                 "w-full text-left px-3 py-2 border-b border-border/50 last:border-0 transition-colors feed-arrival",
                 a.linkScreen ? "hover:bg-accent cursor-pointer" : "cursor-default"
               )}
-              title={a.linkScreen ? `Open ${a.linkScreen} module — ${a.detail}` : a.detail}
+              title={
+                a.linkScreen
+                  ? `Open ${SCREEN_LABELS[a.linkScreen]}${a.linkView ? ` · ${a.linkView} view` : ""} — ${a.detail}`
+                  : a.detail
+              }
             >
               <div className="flex items-center gap-1.5">
                 <SeverityDot severity={a.severity} />

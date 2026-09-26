@@ -55,7 +55,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { Filters, IntelligenceAlert, Platform, RangeKey, ScreenId } from "./mock/types";
+import type { Filters, IntelligenceAlert, IntegrityView, Platform, RangeKey, ScreenId } from "./mock/types";
 import { getAlerts } from "./mock";
 import { subscribeLiveAlerts, startLiveFeed } from "./live-feed";
 
@@ -97,7 +97,11 @@ interface AppState {
   resetFilters: () => void;
 
   screen: ScreenId;
-  go: (screen: ScreenId, opts?: { topicId?: string; claimId?: string }) => void;
+  go: (screen: ScreenId, opts?: { topicId?: string; claimId?: string; view?: IntegrityView }) => void;
+  /** Active half of the Information Integrity module (06) — the merged
+   *  bots + misinformation console. Shareable via `#/integrity/view:<v>`. */
+  integrityView: IntegrityView;
+  setIntegrityView: (view: IntegrityView) => void;
   selectedTopicId: string | null;
   setSelectedTopicId: (id: string | null) => void;
   selectedClaimId: string | null;
@@ -180,10 +184,17 @@ const SCREEN_IDS: ScreenId[] = [
   "sentiment",
   "demographics",
   "network",
-  "bots",
-  "misinfo",
+  "integrity",
   "alerts",
 ];
+
+/** Retired module ids → their merged home. Share links minted before the
+ *  bots + misinfo consoles merged (v2.5) keep resolving — `#/bots` lands on
+ *  the forensics view, `#/misinfo/claim:CLM-…` opens the claims radar. */
+const LEGACY_SCREENS: Record<string, { screen: ScreenId; view: IntegrityView }> = {
+  bots: { screen: "integrity", view: "bots" },
+  misinfo: { screen: "integrity", view: "claims" },
+};
 
 const STORE_KEY = "tracex.console.v1";
 
@@ -262,6 +273,7 @@ interface HashTarget {
   topicId?: string;
   claimId?: string;
   dayT?: number;
+  view?: IntegrityView;
 }
 
 function parseHash(): HashTarget | null {
@@ -269,18 +281,22 @@ function parseHash(): HashTarget | null {
   const h = window.location.hash;
   if (!h.startsWith("#/")) return null;
   const parts = h.slice(2).split("/").filter(Boolean);
-  const screen = SCREEN_IDS.find((s) => s === parts[0]);
+  const legacy = LEGACY_SCREENS[parts[0]];
+  const screen = legacy?.screen ?? SCREEN_IDS.find((s) => s === parts[0]);
   if (!screen) return null;
   const rest = parts.slice(1);
   const claimPart = rest.find((p) => p.startsWith("claim:"));
   const dayPart = rest.find((p) => p.startsWith("day:"));
-  const topicPart = rest.find((p) => !p.startsWith("claim:") && !p.startsWith("day:"));
+  const viewPart = rest.find((p) => p.startsWith("view:"));
+  const topicPart = rest.find((p) => !p.startsWith("claim:") && !p.startsWith("day:") && !p.startsWith("view:"));
   const dayT = dayPart ? Number(dayPart.slice("day:".length)) : undefined;
+  const rawView = viewPart ? viewPart.slice("view:".length) : undefined;
   return {
     screen,
     topicId: topicPart || undefined,
     claimId: claimPart ? claimPart.slice("claim:".length) : undefined,
     dayT: Number.isFinite(dayT) ? dayT : undefined,
+    view: legacy?.view ?? (rawView === "claims" || rawView === "bots" ? rawView : undefined),
   };
 }
 
@@ -299,6 +315,7 @@ const INITIAL = (() => {
       topicId: null as string | null,
       claimId: null as string | null,
       dayT: null as number | null,
+      view: "bots" as IntegrityView,
     };
   }
   const persisted = loadPersisted();
@@ -314,6 +331,7 @@ const INITIAL = (() => {
     topicId: (hash?.topicId ?? null) as string | null,
     claimId: (hash?.claimId ?? null) as string | null,
     dayT: (hash?.dayT ?? null) as number | null,
+    view: (hash?.view ?? "bots") as IntegrityView,
   };
 })();
 
@@ -327,6 +345,7 @@ const FEED_MAX = 10;
 export function AppProvider({ children }: { children: ReactNode }) {
   const [filters, setFilters] = useState<Filters>(INITIAL.filters);
   const [screen, setScreen] = useState<ScreenId>(INITIAL.screen);
+  const [integrityView, setIntegrityView] = useState<IntegrityView>(INITIAL.view);
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(INITIAL.topicId);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(INITIAL.claimId);
   const [watchlist, setWatchlist] = useState<string[]>(INITIAL.watchlist);
@@ -373,8 +392,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const parts: string[] = [screen];
+    if (screen === "integrity") {
+      parts.push(`view:${integrityView}`);
+      if (integrityView === "claims" && selectedClaimId) parts.push(`claim:${selectedClaimId}`);
+    }
     if (selectedTopicId) parts.push(selectedTopicId);
-    if (screen === "misinfo" && selectedClaimId) parts.push(`claim:${selectedClaimId}`);
     if (screen === "overview" && dossierDay != null) parts.push(`day:${dossierDay}`);
     const nextHash = `#/${parts.join("/")}`;
     if (window.location.hash !== nextHash) {
@@ -391,7 +413,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {
       /* private mode / quota — persistence is best-effort */
     }
-  }, [screen, selectedTopicId, selectedClaimId, dossierDay, filters, watchlist, savedViews, claimNotes, reports, compareIds]);
+  }, [screen, selectedTopicId, selectedClaimId, dossierDay, integrityView, filters, watchlist, savedViews, claimNotes, reports, compareIds]);
 
   /* Browser Back/Forward + manual hash edits: restore console state from
    * the target hash. setState lives in the event handler (not an effect),
@@ -408,6 +430,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDossierDay(null);
       } else {
         setScreen(target.screen);
+        if (target.view) setIntegrityView(target.view);
         setSelectedTopicId(target.topicId ?? null);
         setSelectedClaimId(target.claimId ?? null);
         setDossierDay(target.dayT ?? null);
@@ -470,10 +493,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     bump();
   }, [bump]);
 
-  const go = useCallback((s: ScreenId, opts?: { topicId?: string; claimId?: string }) => {
+  const go = useCallback((s: ScreenId, opts?: { topicId?: string; claimId?: string; view?: IntegrityView }) => {
     setScreen(s);
     if (opts?.topicId !== undefined) setSelectedTopicId(opts.topicId);
     if (opts?.claimId !== undefined) setSelectedClaimId(opts.claimId);
+    if (opts?.view) setIntegrityView(opts.view);
     /* leaving the screen also dismisses the summoned day dossier — the
        popover/dialog is overview-scoped by design; callers that want a
        dossier open on arrival set it AFTER go() (event-handler order) */
@@ -618,6 +642,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       resetFilters,
       screen,
       go,
+      integrityView,
+      setIntegrityView,
       selectedTopicId,
       setSelectedTopicId,
       selectedClaimId,
@@ -663,6 +689,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       resetFilters,
       screen,
       go,
+      integrityView,
       selectedTopicId,
       selectedClaimId,
       reportOpen,

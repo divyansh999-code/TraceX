@@ -1,0 +1,722 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * MISINFORMATION RADAR — claim extraction, fact-check cross-referencing,
+     5→ * bot-correlation scoring and cross-platform spread mapping.
+     6→ * Two-column operating view: extraction list + selected claim dossier.
+     7→ */
+     8→import { useEffect, useMemo, useRef, useState } from "react";
+     9→import { useApp } from "@/lib/app-state";
+    10→import { getClaims, getTopicById, NOW, type Claim, type ClaimStatus } from "@/lib/mock";
+    11→import { fmtCompact, fmtDateIST, fmtFull, relTime, riskTone } from "@/lib/fmt";
+    12→import {
+    13→  Panel,
+    14→  Badge,
+    15→  ScoreBar,
+    16→  Legend,
+    17→  Chip,
+    18→  Taxonomy,
+    19→  MonoTag,
+    20→  MetricRow,
+    21→  type Tone,
+    22→} from "../common/primitives";
+    23→import { KpiCard } from "../common/KpiCard";
+    24→import { ScreenHeader } from "../common/ScreenHeader";
+    25→import { CHART, ChartTooltip, GRID, useChartTheme } from "../common/ChartBits";
+    26→import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
+    27→import { cn } from "@/lib/utils";
+    28→import {
+    29→  ResponsiveContainer,
+    30→  ComposedChart,
+    31→  Area,
+    32→  Line,
+    33→  XAxis,
+    34→  YAxis,
+    35→  CartesianGrid,
+    36→  Tooltip,
+    37→} from "recharts";
+    38→import {
+    39→  AlertTriangle,
+    40→  Bot,
+    41→  Check,
+    42→  FileCheck,
+    43→  FileSearch,
+    44→  Gauge,
+    45→  NotebookPen,
+    46→  Radar,
+    47→  SearchX,
+    48→  ShieldAlert,
+    49→} from "lucide-react";
+    50→import { Button } from "@/components/ui/button";
+    51→import { Textarea } from "@/components/ui/textarea";
+    52→import { downloadCsv, csvStamp } from "@/lib/csv";
+    53→import { toast } from "sonner";
+    54→
+    55→const WINDOW_LABEL: Record<string, string> = {
+    56→  "24h": "last 24 hours",
+    57→  "7d": "last 7 days",
+    58→  "30d": "last 30 days",
+    59→  custom: "custom window",
+    60→};
+    61→
+    62→const STATUS_TONE: Record<ClaimStatus, Tone> = {
+    63→  Verified: "green",
+    64→  Disputed: "amber",
+    65→  Unverified: "cyan",
+    66→  False: "red",
+    67→};
+    68→
+    69→const XREF_LABEL: Record<ClaimStatus, string> = {
+    70→  Verified: "cross-verified",
+    71→  Disputed: "cross-referenced",
+    72→  Unverified: "awaiting check",
+    73→  False: "debunked",
+    74→};
+    75→
+    76→type RiskFilter = "all" | "high" | "elevated" | "low";
+    77→type StatusFilter = ClaimStatus | "all";
+    78→
+    79→const RISK_FILTERS: { id: RiskFilter; label: string; test: (risk: number) => boolean }[] = [
+    80→  { id: "all", label: "All", test: () => true },
+    81→  { id: "high", label: "High ≥0.75", test: (r) => r >= 0.75 },
+    82→  { id: "elevated", label: "Elevated ≥0.45", test: (r) => r >= 0.45 && r < 0.75 },
+    83→  { id: "low", label: "Low", test: (r) => r < 0.45 },
+    84→];
+    85→
+    86→const STATUS_FILTERS: StatusFilter[] = ["all", "Verified", "Disputed", "Unverified", "False"];
+    87→
+    88→/* ------------------------------------------------------------------ */
+    89→/* Claim dossier — detail column                                       */
+    90→/* ------------------------------------------------------------------ */
+    91→
+    92→/** Analyst notebook — free-form annotation attached to a claim, persisted
+    93→ *  in the session store (survives reload; shared across dossiers).
+    94→ *  Remounts per claim (keyed by claim id) so the draft initialises cleanly
+    95→ *  without setState-in-effect. Saves are debounced 500ms + on blur. */
+    96→function ClaimNotebook({ claimId }: { claimId: string }) {
+    97→  const { claimNotes, setClaimNote } = useApp();
+    98→  const saved = claimNotes[claimId]?.text ?? "";
+    99→  const [draft, setDraft] = useState(saved);
+   100→  const [dirty, setDirty] = useState(false);
+   101→  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   102→
+   103→  const commit = (text: string) => {
+   104→    if (debounceRef.current) clearTimeout(debounceRef.current);
+   105→    setClaimNote(claimId, text);
+   106→    setDirty(false);
+   107→  };
+   108→
+   109→  const onChange = (v: string) => {
+   110→    setDraft(v);
+   111→    setDirty(true);
+   112→    if (debounceRef.current) clearTimeout(debounceRef.current);
+   113→    debounceRef.current = setTimeout(() => commit(v), 500);
+   114→  };
+   115→
+   116→  /* flush pending edits if the component unmounts mid-debounce */
+   117→  useEffect(
+   118→    () => () => {
+   119→      if (debounceRef.current) clearTimeout(debounceRef.current);
+   120→    },
+   121→    []
+   122→  );
+   123→
+   124→  const updatedAt = claimNotes[claimId]?.updatedAt;
+   125→
+   126→  return (
+   127→    <div className="mt-4 pt-3 border-t border-border/60">
+   128→      <div className="flex items-center gap-2 mb-2">
+   129→        <NotebookPen className="size-3.5 text-primary" />
+   130→        <Taxonomy>Analyst notebook</Taxonomy>
+   131→        <span className="ml-auto font-mono text-[9px] text-muted-foreground/70">
+   132→          {dirty ? "saving…" : updatedAt ? `saved ${relTime(updatedAt, NOW)} ago` : "empty"}
+   133→        </span>
+   134→        {draft.trim() !== "" && (
+   135→          <span
+   136→            className={cn(
+   137→              "inline-flex items-center gap-1 font-mono text-[9px]",
+   138→              dirty ? "text-muted-foreground" : "text-signal-green"
+   139→            )}
+   140→          >
+   141→            <Check className="size-2.5" />
+   142→            {dirty ? "draft" : "synced"}
+   143→          </span>
+   144→        )}
+   145→      </div>
+   146→      <Textarea
+   147→        value={draft}
+   148→        onChange={(e) => onChange(e.target.value)}
+   149→        onBlur={() => dirty && commit(draft)}
+   150→        placeholder="Triage notes, escalation decisions, cross-references… (auto-saves, persists across sessions)"
+   151→        className="min-h-20 text-xs bg-background font-mono leading-relaxed resize-y"
+   152→        maxLength={2000}
+   153→        aria-label={`Analyst notes for claim ${claimId}`}
+   154→      />
+   155→      <div className="flex items-center justify-between mt-1.5">
+   156→        <span className="font-mono text-[9px] tnum text-muted-foreground/60">{draft.length}/2000</span>
+   157→        {draft !== saved && (
+   158→          <button
+   159→            type="button"
+   160→            onClick={() => commit(draft)}
+   161→            className="text-[10px] font-mono uppercase tracking-wider text-primary hover:text-primary/80 transition-colors cursor-pointer"
+   162→          >
+   163→            Save now
+   164→          </button>
+   165→        )}
+   166→      </div>
+   167→    </div>
+   168→  );
+   169→}
+   170→
+   171→function ClaimDossier({ claim }: { claim: Claim }) {
+   172→  const { go } = useApp();
+   173→  const chartTheme = useChartTheme();
+   174→  const topic = getTopicById(claim.topicId);
+   175→
+   176→  const spreadData = useMemo(
+   177→    () => claim.spread.map((p) => ({ ...p, cum: p.xReach + p.tgReach })),
+   178→    [claim]
+   179→  );
+   180→  const peak = useMemo(
+   181→    () => spreadData.reduce((a, b) => (b.cum > a.cum ? b : a), spreadData[0]),
+   182→    [spreadData]
+   183→  );
+   184→  const maxEventReach = useMemo(() => Math.max(...claim.events.map((e) => e.reach), 1), [claim]);
+   185→
+   186→  const corrTone: Tone = claim.botCorrelation >= 0.7 ? "red" : claim.botCorrelation >= 0.4 ? "amber" : "green";
+   187→  const corrLabel =
+   188→    claim.botCorrelation >= 0.7 ? "High correlation" : claim.botCorrelation >= 0.4 ? "Moderate" : "Low";
+   189→  const riskT = riskTone(claim.risk);
+   190→  const riskLabel = riskT === "red" ? "High risk" : riskT === "amber" ? "Elevated risk" : "Low risk";
+   191→
+   192→  return (
+   193→    <div className="min-w-0">
+   194→      {/* dossier header */}
+   195→      <div className="flex flex-wrap items-center gap-2">
+   196→        <MonoTag className="text-foreground border-border">{claim.id}</MonoTag>
+   197→        <Badge tone={STATUS_TONE[claim.status]} className="px-2 py-1 text-[11px]">
+   198→          {claim.status}
+   199→        </Badge>
+   200→        {topic && (
+   201→          <Chip
+   202→            onClick={() => go("trends", { topicId: claim.topicId })}
+   203→            title={`Open ${topic.label} in Trend Explorer`}
+   204→          >
+   205→            {topic.label}
+   206→          </Chip>
+   207→        )}
+   208→        <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground whitespace-nowrap">
+   209→          first seen {fmtDateIST(claim.firstSeen)}
+   210→        </span>
+   211→      </div>
+   212→
+   213→      {/* claim text + translation */}
+   214→      <p className="mt-3 text-sm leading-relaxed text-foreground">{claim.text}</p>
+   215→      {claim.translation && (
+   216→        <p className="mt-1.5 text-xs italic leading-relaxed text-muted-foreground">{claim.translation}</p>
+   217→      )}
+   218→
+   219→      {/* fact-check cross-reference */}
+   220→      <div className="mt-4 pt-3 border-t border-border/60">
+   221→        <Taxonomy>Fact-check cross-reference</Taxonomy>
+   222→        <ul className="mt-2 space-y-1.5">
+   223→          {claim.sources.map((s) => (
+   224→            <li key={s} className="flex items-center gap-2 min-w-0">
+   225→              <FileCheck className="size-3.5 text-signal-green shrink-0" strokeWidth={1.75} />
+   226→              <span className="text-xs text-foreground truncate">{s}</span>
+   227→              <Badge tone={STATUS_TONE[claim.status]} className="ml-auto shrink-0">
+   228→                {XREF_LABEL[claim.status]}
+   229→              </Badge>
+   230→            </li>
+   231→          ))}
+   232→        </ul>
+   233→      </div>
+   234→
+   235→      {/* bot correlation */}
+   236→      <div className="mt-4 pt-3 border-t border-border/60">
+   237→        <div className="flex items-center justify-between gap-2">
+   238→          <Taxonomy>Bot correlation</Taxonomy>
+   239→          <Badge tone={corrTone}>{corrLabel}</Badge>
+   240→        </div>
+   241→        <ScoreBar value={claim.botCorrelation} showValue className="mt-2" />
+   242→        <p className="mt-1.5 text-[10px] text-muted-foreground leading-relaxed">
+   243→          Share of amplification attributable to flagged bot clusters.
+   244→        </p>
+   245→      </div>
+   246→
+   247→      {/* misinformation risk */}
+   248→      <div className="mt-4 pt-3 border-t border-border/60">
+   249→        <div className="flex items-center justify-between gap-2">
+   250→          <Taxonomy>Misinformation risk</Taxonomy>
+   251→          <Badge tone={riskT}>{riskLabel}</Badge>
+   252→        </div>
+   253→        <ScoreBar value={claim.risk} showValue className="mt-2" />
+   254→        <p className="mt-1.5 text-[10px] text-muted-foreground leading-relaxed">
+   255→          Composite of spread velocity × bot correlation × fact-check status.
+   256→        </p>
+   257→      </div>
+   258→
+   259→      {/* spread map — the centerpiece */}
+   260→      <div className="mt-4 pt-3 border-t border-border/60">
+   261→        <div className="flex flex-wrap items-center justify-between gap-2">
+   262→          <Taxonomy>Cross-platform propagation</Taxonomy>
+   263→          <Legend
+   264→            items={[
+   265→              { label: "X reach", color: CHART.orange },
+   266→              { label: "Telegram reach", color: CHART.green },
+   267→              { label: "Cumulative", color: CHART.cyan, dashed: true },
+   268→            ]}
+   269→          />
+   270→        </div>
+   271→        <div className="mt-2 h-[230px] -mx-1">
+   272→          <ResponsiveContainer width="100%" height="100%">
+   273→            <ComposedChart data={spreadData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+   274→              <defs>
+   275→                <linearGradient id={`msX-${claim.id}`} x1="0" y1="0" x2="0" y2="1">
+   276→                  <stop offset="0%" stopColor={CHART.orange} stopOpacity={0.45} />
+   277→                  <stop offset="100%" stopColor={CHART.orange} stopOpacity={0.08} />
+   278→                </linearGradient>
+   279→                <linearGradient id={`msTg-${claim.id}`} x1="0" y1="0" x2="0" y2="1">
+   280→                  <stop offset="0%" stopColor={CHART.green} stopOpacity={0.45} />
+   281→                  <stop offset="100%" stopColor={CHART.green} stopOpacity={0.08} />
+   282→                </linearGradient>
+   283→              </defs>
+   284→              <CartesianGrid stroke={chartTheme.grid} strokeDasharray={GRID.strokeDasharray} vertical={GRID.vertical} />
+   285→              <XAxis
+   286→                dataKey="hour"
+   287→                type="category"
+   288→                tickFormatter={(h: number) => `${h}h`}
+   289→                minTickGap={28}
+   290→                tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   291→                axisLine={{ stroke: chartTheme.grid }}
+   292→                tickLine={false}
+   293→              />
+   294→              <YAxis
+   295→                tickFormatter={(v: number) => fmtCompact(v)}
+   296→                width={44}
+   297→                tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
+   298→                axisLine={false}
+   299→                tickLine={false}
+   300→              />
+   301→              <Tooltip
+   302→                cursor={{ stroke: chartTheme.crosshair, strokeDasharray: "4 4" }}
+   303→                content={(props) => {
+   304→                  const p = props as {
+   305→                    active?: boolean;
+   306→                    label?: string | number;
+   307→                    payload?: { name?: string; value?: number | string; color?: string }[];
+   308→                  };
+   309→                  return (
+   310→                    <ChartTooltip
+   311→                      active={p.active}
+   312→                      payload={p.payload}
+   313→                      label={p.label !== undefined ? `${p.label}h` : ""}
+   314→                      format={(entry) =>
+   315→                        typeof entry.value === "number" ? fmtCompact(entry.value) : String(entry.value)
+   316→                      }
+   317→                    />
+   318→                  );
+   319→                }}
+   320→              />
+   321→              <Area
+   322→                dataKey="xReach"
+   323→                name="X reach"
+   324→                stroke={CHART.orange}
+   325→                strokeWidth={1.5}
+   326→                fill={`url(#msX-${claim.id})`}
+   327→              />
+   328→              <Area
+   329→                dataKey="tgReach"
+   330→                name="Telegram reach"
+   331→                stroke={CHART.green}
+   332→                strokeWidth={1.5}
+   333→                fill={`url(#msTg-${claim.id})`}
+   334→              />
+   335→              <Line
+   336→                dataKey="cum"
+   337→                name="Cumulative"
+   338→                stroke={CHART.cyan}
+   339→                strokeWidth={1.5}
+   340→                strokeDasharray="5 4"
+   341→                dot={false}
+   342→              />
+   343→            </ComposedChart>
+   344→          </ResponsiveContainer>
+   345→        </div>
+   346→
+   347→        {/* event timeline strip */}
+   348→        <div className="mt-2">
+   349→          <div className="relative">
+   350→            <div className="absolute inset-x-4 top-[7px] border-t border-border/70" aria-hidden />
+   351→            <div className="relative flex items-start">
+   352→              {claim.events.map((e) => {
+   353→                const size = Math.round(8 + 8 * (e.reach / maxEventReach));
+   354→                return (
+   355→                  <div
+   356→                    key={`${e.hour}-${e.platform}`}
+   357→                    className="flex-1 min-w-0 flex flex-col items-center gap-1 text-center"
+   358→                    title={`${e.hour}h · ${e.platform === "x" ? "X" : "Telegram"} · ${fmtCompact(e.reach)} reach · bots ${Math.round(e.botShare * 100)}%`}
+   359→                  >
+   360→                    <span
+   361→                      className="rounded-[3px] border-2 border-card shrink-0"
+   362→                      style={{
+   363→                        width: size,
+   364→                        height: size,
+   365→                        background: e.platform === "x" ? CHART.orange : CHART.green,
+   366→                      }}
+   367→                    />
+   368→                    <span className="font-mono text-[10px] tnum text-muted-foreground">{e.hour}h</span>
+   369→                    <span className="w-full truncate text-[9px] leading-tight text-muted-foreground/80">{e.note}</span>
+   370→                    {e.botShare > 0.5 && <Badge tone="red">bots {Math.round(e.botShare * 100)}%</Badge>}
+   371→                  </div>
+   372→                );
+   373→              })}
+   374→            </div>
+   375→          </div>
+   376→        </div>
+   377→      </div>
+   378→
+   379→      {/* dossier stats */}
+   380→      <div className="mt-4 pt-1 border-t border-border/60">
+   381→        <MetricRow label="Total reach" value={fmtFull(claim.totalReach)} sub="impressions" />
+   382→        <MetricRow label="Spread duration" value={`${claim.spreadHours}h`} sub="first → latest" />
+   383→        <MetricRow
+   384→          label="Peak propagation"
+   385→          value={peak ? `${peak.hour}h` : "—"}
+   386→          sub={peak ? fmtCompact(peak.cum) : ""}
+   387→        />
+   388→        <MetricRow label="Tracked events" value={String(claim.events.length)} sub="platform hops" />
+   389→      </div>
+   390→
+   391→      {/* analyst notebook — persisted per-claim annotations (v0.12) */}
+   392→      <ClaimNotebook key={claim.id} claimId={claim.id} />
+   393→    </div>
+   394→  );
+   395→}
+   396→
+   397→/* ------------------------------------------------------------------ */
+   398→/* Main screen                                                         */
+   399→/* ------------------------------------------------------------------ */
+   400→
+   401→export function MisinfoScreen() {
+   402→  const { filters, selectedClaimId, setSelectedClaimId, claimNotes } = useApp();
+   403→  const ready = useRefresh("misinfo");
+   404→
+   405→  const claims = useMemo(() => getClaims(filters), [filters]);
+   406→  const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
+   407→  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+   408→  /* dossier selection lives in the global bus so the ⌘K palette and
+   409→     deep-links (#/misinfo/claim:CLM-004) can open a dossier directly. */
+   410→  const selectedId = selectedClaimId;
+   411→  const setSelectedId = setSelectedClaimId;
+   412→
+   413→  const sorted = useMemo(() => [...claims].sort((a, b) => b.risk - a.risk), [claims]);
+   414→  const riskTest = RISK_FILTERS.find((f) => f.id === riskFilter)?.test ?? (() => true);
+   415→  const filtered = useMemo(
+   416→    () => sorted.filter((c) => riskTest(c.risk) && (statusFilter === "all" || c.status === statusFilter)),
+   417→    [sorted, riskTest, statusFilter]
+   418→  );
+   419→
+   420→  /* selection: explicit pick, else highest-risk claim of the current bank */
+   421→  const selected = useMemo(
+   422→    () => claims.find((c) => c.id === selectedId) ?? filtered[0] ?? null,
+   423→    [claims, selectedId, filtered]
+   424→  );
+   425→
+   426→  /* Deep-link / palette focus: when a claim becomes selected, scroll it into
+   427→   * view inside the extraction list and flash an outline pulse. DOM-only side
+   428→   * effect (no setState) — fires for user clicks and programmatic jumps alike. */
+   429→  useEffect(() => {
+   430→    if (!selectedId) return;
+   431→    const el = document.querySelector<HTMLElement>(`[data-claim-id="${CSS.escape(selectedId)}"]`);
+   432→    if (!el) return;
+   433→    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+   434→    el.classList.remove("claim-flash");
+   435→    /* restart the animation even when re-selecting the same claim */
+   436→    void el.offsetWidth;
+   437→    el.classList.add("claim-flash");
+   438→    const t = setTimeout(() => el.classList.remove("claim-flash"), 1_800);
+   439→    return () => clearTimeout(t);
+   440→  }, [selectedId]);
+   441→
+   442→  /* KPIs */
+   443→  const total = claims.length;
+   444→  const falseDisputed = claims.filter((c) => c.status === "False" || c.status === "Disputed");
+   445→  const unverified = claims.filter((c) => c.status === "Unverified");
+   446→  const avgRisk = total ? claims.reduce((a, c) => a + c.risk, 0) / total : 0;
+   447→  const botCorrelated = claims.filter((c) => c.botCorrelation >= 0.5);
+   448→
+   449→  const windowLabel = WINDOW_LABEL[filters.range] ?? "window";
+   450→  const platformLabel =
+   451→    filters.platform === "all" ? "X + Telegram" : filters.platform === "x" ? "X only" : "Telegram only";
+   452→  const riskSpark = useMemo(() => sorted.map((c) => c.risk), [sorted]);
+   453→  const botSpark = useMemo(() => claims.map((c) => c.botCorrelation).sort((a, b) => a - b), [claims]);
+   454→
+   455→  if (!ready) {
+   456→    return (
+   457→      <div className="space-y-4 animate-in fade-in duration-200">
+   458→        <KpiRowSkeleton />
+   459→        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   460→          <PanelSkeleton className="xl:col-span-7" height="h-[520px]" />
+   461→          <PanelSkeleton className="xl:col-span-5" height="h-[520px]" />
+   462→        </div>
+   463→      </div>
+   464→    );
+   465→  }
+   466→
+   467→  return (
+   468→    <div className="space-y-4 animate-in fade-in duration-300">
+   469→      <ScreenHeader
+   470→        kicker="MODULE 07 // MISINFORMATION RADAR"
+   471→        title="Misinformation Radar"
+   472→        description={`Claims extracted from the monitored stream, cross-referenced against fact-check corpora and tracked as they propagate across X and Telegram — ${windowLabel}. Select a claim to open its dossier.`}
+   473→        right={
+   474→          <div className="flex items-center gap-2">
+   475→            <Badge tone="cyan" dot>
+   476→              {platformLabel}
+   477→            </Badge>
+   478→            <Badge tone={riskTone(avgRisk)} dot>
+   479→              avg risk {total ? avgRisk.toFixed(2) : "—"}
+   480→            </Badge>
+   481→            <Button
+   482→              variant="outline"
+   483→              size="sm"
+   484→              className="h-7 text-[11px] gap-1.5"
+   485→              onClick={() => {
+   486→                const top = sorted[0];
+   487→                if (!top) return;
+   488→                toast("Claim escalated", {
+   489→                  description: `${top.id} routed to the fact-check escalation queue.`,
+   490→                });
+   491→              }}
+   492→            >
+   493→              <ShieldAlert className="size-3.5" /> Escalate top claim
+   494→            </Button>
+   495→          </div>
+   496→        }
+   497→      />
+   498→
+   499→      {/* KPI row */}
+   500→      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+   501→        <KpiCard
+   502→          label="Claims tracked"
+   503→          value={String(total)}
+   504→          icon={FileSearch}
+   505→          tone="cyan"
+   506→          delta={11.1}
+   507→          spark={riskSpark}
+   508→          sparkColor={CHART.cyan}
+   509→          footnote={
+   510→            <span>
+   511→              {falseDisputed.length} false/disputed · {unverified.length} unverified
+   512→            </span>
+   513→          }
+   514→        />
+   515→        <KpiCard
+   516→          label="False + disputed rate"
+   517→          value={`${total ? Math.round((falseDisputed.length / total) * 100) : 0}%`}
+   518→          icon={AlertTriangle}
+   519→          tone="red"
+   520→          invertDelta
+   521→          delta={-3.2}
+   522→          spark={falseDisputed.map((c) => c.risk)}
+   523→          sparkColor={CHART.red}
+   524→          footnote={<span>of extracted claims</span>}
+   525→        />
+   526→        <KpiCard
+   527→          label="Avg. risk score"
+   528→          value={total ? avgRisk.toFixed(2) : "—"}
+   529→          icon={Gauge}
+   530→          tone={riskTone(avgRisk) === "red" ? "red" : "amber"}
+   531→          delta={2.4}
+   532→          spark={riskSpark}
+   533→          sparkColor={CHART.amber}
+   534→          footnote={<span>scale 0.00 – 1.00</span>}
+   535→        />
+   536→        <KpiCard
+   537→          label="Bot-correlated"
+   538→          value={String(botCorrelated.length)}
+   539→          unit="claims"
+   540→          icon={Bot}
+   541→          tone="orange"
+   542→          delta={8.7}
+   543→          spark={botSpark}
+   544→          sparkColor={CHART.orange}
+   545→          footnote={<span>botCorrelation ≥ 0.50</span>}
+   546→        />
+   547→      </div>
+   548→
+   549→      {/* filter bank */}
+   550→      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
+   551→        <div className="flex items-center gap-1.5 flex-wrap">
+   552→          <Taxonomy className="hidden sm:inline">Risk</Taxonomy>
+   553→          {RISK_FILTERS.map((f) => (
+   554→            <Chip key={f.id} active={riskFilter === f.id} onClick={() => setRiskFilter(f.id)}>
+   555→              {f.label}
+   556→            </Chip>
+   557→          ))}
+   558→        </div>
+   559→        <div className="hidden sm:block w-px h-4 bg-border" />
+   560→        <div className="flex items-center gap-1.5 flex-wrap">
+   561→          <Taxonomy className="hidden sm:inline">Status</Taxonomy>
+   562→          {STATUS_FILTERS.map((s) => (
+   563→            <Chip key={s} active={statusFilter === s} onClick={() => setStatusFilter(s)}>
+   564→              {s === "all" ? "All" : s}
+   565→            </Chip>
+   566→          ))}
+   567→        </div>
+   568→        <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground whitespace-nowrap">
+   569→          {filtered.length} of {total} claims
+   570→        </span>
+   571→      </div>
+   572→
+   573→      {/* extraction list + dossier */}
+   574→      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+   575→        <Panel
+   576→          className="xl:col-span-7"
+   577→          title="Extracted claims"
+   578→          icon={Radar}
+   579→          sub="sorted by risk"
+   580→          bodyClassName="p-0"
+   581→          right={
+   582→            <span className="flex items-center gap-2 font-mono text-[10px] tnum text-muted-foreground">
+   583→              <span>{filtered.length}/{total}</span>
+   584→              <Button
+   585→                variant="outline"
+   586→                size="sm"
+   587→                className="h-6 px-2 text-[10px] gap-1"
+   588→                title="Export the filtered claims list as CSV"
+   589→                onClick={() => {
+   590→                  downloadCsv(
+   591→                    `tracex-claims-${csvStamp()}.csv`,
+   592→                    [
+   593→                      "claim_id",
+   594→                      "status",
+   595→                      "narrative",
+   596→                      "text",
+   597→                      "translation",
+   598→                      "risk",
+   599→                      "bot_correlation",
+   600→                      "total_reach",
+   601→                      "spread_hours",
+   602→                      "first_seen",
+   603→                      "analyst_note",
+   604→                    ],
+   605→                    filtered.map((c) => [
+   606→                      c.id,
+   607→                      c.status,
+   608→                      getTopicById(c.topicId)?.label ?? c.topicId,
+   609→                      c.text,
+   610→                      c.translation ?? "",
+   611→                      c.risk.toFixed(2),
+   612→                      c.botCorrelation.toFixed(2),
+   613→                      c.totalReach,
+   614→                      c.spreadHours,
+   615→                      fmtDateIST(c.firstSeen),
+   616→                      claimNotes[c.id]?.text ?? "",
+   617→                    ])
+   618→                  );
+   619→                  toast("Claims list exported", {
+   620→                    description: `${filtered.length} claims → CSV (current risk/status filters + notes).`,
+   621→                  });
+   622→                }}
+   623→              >
+   624→                CSV
+   625→              </Button>
+   626→            </span>
+   627→          }
+   628→        >
+   629→          {filtered.length === 0 ? (
+   630→            <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
+   631→              <SearchX className="size-6 text-muted-foreground/60" strokeWidth={1.5} />
+   632→              <p className="text-xs text-muted-foreground">No claims match the current filter bank</p>
+   633→              <Button
+   634→                variant="outline"
+   635→                size="sm"
+   636→                className="h-6 text-[10px]"
+   637→                onClick={() => {
+   638→                  setRiskFilter("all");
+   639→                  setStatusFilter("all");
+   640→                }}
+   641→              >
+   642→                Reset filters
+   643→              </Button>
+   644→            </div>
+   645→          ) : (
+   646→            <div className="max-h-[520px] overflow-y-auto divide-y divide-border/50">
+   647→              {filtered.map((c) => {
+   648→                const isSelected = selected?.id === c.id;
+   649→                return (
+   650→                  <button
+   651→                    key={c.id}
+   652→                    type="button"
+   653→                    data-claim-id={c.id}
+   654→                    onClick={() => setSelectedId(c.id)}
+   655→                    className={cn(
+   656→                      "w-full text-left border-l-2 px-4 py-2.5 transition-colors cursor-pointer",
+   657→                      isSelected
+   658→                        ? "border-l-primary bg-accent"
+   659→                        : "border-l-transparent hover:bg-accent/40"
+   660→                    )}
+   661→                  >
+   662→                    <div className="flex items-start gap-3">
+   663→                      <div className="min-w-0 flex-1">
+   664→                        <div className="flex items-center gap-2">
+   665→                          <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>
+   666→                          <span className="font-mono text-[10px] tnum text-muted-foreground/70 truncate">
+   667→                            {getTopicById(c.topicId)?.label ?? "—"}
+   668→                          </span>
+   669→                          {claimNotes[c.id] && (
+   670→                            <NotebookPen
+   671→                              className="size-3 text-primary shrink-0"
+   672→                              aria-label="has analyst note"
+   673→                            />
+   674→                          )}
+   675→                        </div>
+   676→                        <p className="mt-1.5 text-xs text-foreground leading-snug line-clamp-2">{c.text}</p>
+   677→                        {c.translation && (
+   678→                          <p className="mt-0.5 text-[10px] text-muted-foreground truncate">{c.translation}</p>
+   679→                        )}
+   680→                      </div>
+   681→                      <div className="shrink-0 w-28 flex flex-col items-end gap-1">
+   682→                        <ScoreBar value={c.risk} showValue className="w-24" />
+   683→                        <MonoTag>{c.id}</MonoTag>
+   684→                        <span className="font-mono text-[10px] tnum text-muted-foreground/70">
+   685→                          {relTime(c.firstSeen, NOW)}
+   686→                        </span>
+   687→                      </div>
+   688→                    </div>
+   689→                  </button>
+   690→                );
+   691→              })}
+   692→            </div>
+   693→          )}
+   694→        </Panel>
+   695→
+   696→        <div className="xl:col-span-5 min-w-0">
+   697→          <Panel title="Claim dossier" icon={ShieldAlert} sub={selected?.id ?? "no selection"}>
+   698→            {selected ? (
+   699→              <ClaimDossier claim={selected} />
+   700→            ) : (
+   701→              <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+   702→                <ShieldAlert className="size-6 text-muted-foreground/60" strokeWidth={1.5} />
+   703→                <p className="text-xs text-muted-foreground">No claim selected</p>
+   704→                <p className="text-[10px] text-muted-foreground/70 max-w-48 leading-relaxed">
+   705→                  Pick a claim from the extraction list to open its dossier — fact-check cross-reference, bot
+   706→                  correlation and cross-platform spread map.
+   707→                </p>
+   708→              </div>
+   709→            )}
+   710→          </Panel>
+   711→        </div>
+   712→      </div>
+   713→
+   714→      <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground/60 px-1">
+   715→        <ShieldAlert className="size-3" />
+   716→        Cross-referenced against PIB Fact Check · BOOM Live · Alt News · Factly · Snopes · window {windowLabel} ·
+   717→        generated {relTime(NOW)} ago · verified across four independent desks
+   718→      </div>
+   719→    </div>
+   720→  );
+   721→}
+   722→

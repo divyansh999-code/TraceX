@@ -11,7 +11,7 @@ export function StatusBar() {
   return (
     <footer className="mt-auto shrink-0 h-8 border-t border-border bg-card/60 backdrop-blur-sm flex items-center px-4 gap-4 overflow-x-auto">
       <span className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">
-        TRACEX <span className="text-primary">2.4</span> · SIGNAL CONSOLE
+        TRACEX <span className="text-primary">2.5</span> · SIGNAL CONSOLE
       </span>
       <span className="hidden md:inline-flex items-center gap-1.5 font-mono text-[10px] text-signal-green whitespace-nowrap">
         <ShieldCheck className="size-3" />
@@ -19,7 +19,7 @@ export function StatusBar() {
       </span>
       <HintStrip className="hidden sm:inline-flex shrink-0" />
       <span className="ml-auto font-mono text-[10px] text-muted-foreground whitespace-nowrap hidden lg:inline">
-        8/8 MODULES NOMINAL · INGEST 1.2k/min
+        7/7 MODULES NOMINAL · INGEST 1.2k/min
       </span>
       <span className="font-mono text-[10px] tnum text-muted-foreground whitespace-nowrap">
         {now ? fmtClockIST(now) : "--:--:--"} IST

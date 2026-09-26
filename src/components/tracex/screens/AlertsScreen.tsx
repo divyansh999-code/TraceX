@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { ArchivedReportDialog } from "../modals/ArchivedReportDialog";
 import type { ArchivedReport } from "@/lib/app-state";
+import { SCREEN_LABELS } from "@/lib/mock/types";
 
 const WINDOW_LABEL: Record<string, string> = {
   "24h": "last 24 hours",
@@ -237,8 +238,14 @@ function AlertHistory({
             {visible.map((a) => (
               <tr
                 key={a.id}
-                onClick={() => a.linkScreen && go(a.linkScreen)}
-                title={a.linkScreen ? `Open ${a.linkScreen} module` : undefined}
+                onClick={() =>
+                  a.linkScreen && go(a.linkScreen, a.linkView ? { view: a.linkView } : undefined)
+                }
+                title={
+                  a.linkScreen
+                    ? `Open ${SCREEN_LABELS[a.linkScreen]}${a.linkView ? ` · ${a.linkView} view` : ""}`
+                    : undefined
+                }
                 className={cn(
                   "border-b border-border/50 last:border-0 transition-colors",
                   a.status === "Resolved" && "opacity-60",

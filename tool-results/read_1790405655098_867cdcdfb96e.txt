@@ -1,0 +1,701 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * ⌘K Command Palette — Palantir-style operator console quick actions:
+     5→ * jump modules, pull up narratives/claims/influencers, switch filter banks.
+     6→ */
+     7→import { useEffect, useMemo, useState } from "react";
+     8→import { useApp } from "@/lib/app-state";
+     9→import { TOPICS, getClaims, getInfluencers, getVolumeSeries, LANGUAGES, NOW } from "@/lib/mock";
+    10→import { fmtCompact, fmtDayIST, relTime } from "@/lib/fmt";
+    11→import {
+    12→  CommandDialog,
+    13→  CommandInput,
+    14→  CommandList,
+    15→  CommandEmpty,
+    16→  CommandGroup,
+    17→  CommandItem,
+    18→  CommandSeparator,
+    19→  CommandShortcut,
+    20→} from "@/components/ui/command";
+    21→import {
+    22→  LayoutDashboard,
+    23→  TrendingUp,
+    24→  HeartPulse,
+    25→  Users,
+    26→  Network,
+    27→  Bot,
+    28→  Radar,
+    29→  BellRing,
+    30→  Star,
+    31→  Flame,
+    32→  ShieldAlert,
+    33→  AtSign,
+    34→  RotateCcw,
+    35→  FileDown,
+    36→  Send,
+    37→  Globe,
+    38→  Languages,
+    39→  Footprints,
+    40→  FlaskConical,
+    41→  GitCompareArrows,
+    42→  CalendarSearch,
+    43→  SlidersHorizontal,
+    44→} from "lucide-react";
+    45→import { toast } from "sonner";
+    46→import { cn } from "@/lib/utils";
+    47→import type { Platform, RangeKey, ScreenId } from "@/lib/mock/types";
+    48→import { startGuidedTour } from "./GuidedTour";
+    49→
+    50→const MODULES: { id: ScreenId; code: string; label: string; icon: typeof LayoutDashboard }[] = [
+    51→  { id: "overview", code: "01", label: "Overview — Intelligence Fusion", icon: LayoutDashboard },
+    52→  { id: "trends", code: "02", label: "Trend Explorer", icon: TrendingUp },
+    53→  { id: "sentiment", code: "03", label: "Sentiment & Emotion", icon: HeartPulse },
+    54→  { id: "demographics", code: "04", label: "Demographics", icon: Users },
+    55→  { id: "network", code: "05", label: "Network & Influence", icon: Network },
+    56→  { id: "bots", code: "06", label: "Bot Detection", icon: Bot },
+    57→  { id: "misinfo", code: "07", label: "Misinformation Radar", icon: Radar },
+    58→  { id: "alerts", code: "08", label: "Alerts & Reports", icon: BellRing },
+    59→];
+    60→
+    61→/* bare ids + glosses keep romanized search working for the compare entry */
+    62→const compareLabel = (id: string) => TOPICS.find((t) => t.id === id)?.label ?? id;
+    63→const compareGloss = (id: string) => TOPICS.find((t) => t.id === id)?.gloss ?? "";
+    64→
+    65→const PLATFORM_META = {
+    66→  all: { label: "Filter: all platforms", icon: Globe },
+    67→  x: { label: "Filter: X only", icon: AtSign },
+    68→  telegram: { label: "Filter: Telegram only", icon: Send },
+    69→} as const;
+    70→
+    71→/** Strict token-based palette filter (v0.13): every whitespace-separated
+    72→ *  query token must occur as a substring of the item value — no more
+    73→ *  loose fuzzy matches (searching "tour" used to highlight a narrative
+    74→ *  with "transactions…"). Prefix and whole-phrase matches rank higher.
+    75→ *
+    76→ *  v0.17: values carrying the `nl-intent` marker opt OUT of token scoring.
+    77→ *  Natural-language intent items derive their value from the live query
+    78→ *  (resolved topics, filter descriptions) — cmdk re-scores mid-keystroke
+    79→ *  against the PREVIOUSLY registered value, so a newly-typed token would
+    80→ *  score 0, unmount the item before its updated value re-registers, and
+    81→ *  dead-lock the group. Opt-out is safe because those groups only mount
+    82→ *  once the query itself parses as the intent — they can never leak into
+    83→ *  unrelated searches. */
+    84→const tokenFilter: (value: string, search: string) => number = (value, search) => {
+    85→  const v = value.toLowerCase();
+    86→  if (v.startsWith("nl-intent")) return 1;
+    87→  const q = search.toLowerCase().trim();
+    88→  if (!q) return 1;
+    89→  const tokens = q.split(/\s+/).filter(Boolean);
+    90→  if (!tokens.every((t) => v.includes(t))) return 0;
+    91→  let score = 1;
+    92→  if (v.includes(q)) score += 50; // whole phrase
+    93→  if (v.startsWith(tokens[0])) score += 100; // leading token
+    94→  return score;
+    95→};
+    96→
+    97→/* ---- natural-language intents (v0.16 → v0.17) ----
+    98→   "compare gaganyaan vs neet" → resolve each side to a narrative
+    99→   (exact id/label first, then substring across id/label/gloss so
+   100→   romanized fragments keep working) and arm the global A/B pair.
+   101→   v0.17 adds "goto <module>", "filter <spec>…" (platform / range /
+   102→   language, composable) and "watch <topic>" operators. */
+   103→const COMPARE_RE = /^\s*compare\s+(.+?)\s+(?:vs\.?|versus)\s+(.+?)\s*$/i;
+   104→const GOTO_RE = /^\s*(?:go\s*to|goto|open|show)\s+(.+?)\s*$/i;
+   105→const FILTER_RE = /^\s*(?:filter|set|use)\s+(.+?)\s*$/i;
+   106→const WATCH_RE = /^\s*(?:watch|star|follow)\s+(.+?)\s*$/i;
+   107→
+   108→const sideTopic = (q: string) => {
+   109→  const s = q.trim().toLowerCase();
+   110→  if (!s) return undefined;
+   111→  return (
+   112→    TOPICS.find((t) => t.id.toLowerCase() === s || t.label.toLowerCase() === s) ??
+   113→    TOPICS.find(
+   114→      (t) =>
+   115→        t.id.toLowerCase().includes(s) ||
+   116→        t.label.toLowerCase().includes(s) ||
+   117→        t.gloss.toLowerCase().includes(s)
+   118→    )
+   119→  );
+   120→};
+   121→
+   122→/** Resolve a goto target to a module — matches id, label (substring) or code. */
+   123→const gotoModule = (q: string) => {
+   124→  const s = q.trim().toLowerCase();
+   125→  if (!s) return undefined;
+   126→  return (
+   127→    MODULES.find(
+   128→      (m) =>
+   129→        m.id === s ||
+   130→        m.label.toLowerCase().includes(s) ||
+   131→        m.code === s ||
+   132→        /* friendly aliases: "bots", "misinfo", "graph", "alerts"… */
+   133→        (s.length >= 3 && m.id.includes(s.replace(/\s+/g, "")))
+   134→    ) ?? (s === "graph" ? MODULES.find((m) => m.id === "network") : undefined)
+   135→  );
+   136→};
+   137→
+   138→/** Parse a filter intent into concrete filter-bank writes. Composable:
+   139→   "filter x 30d", "filter telegram", "filter hindi last 14 days". */
+   140→interface FilterIntent {
+   141→  platform?: Platform;
+   142→  range?: RangeKey;
+   143→  customDays?: number;
+   144→  language?: string;
+   145→  describe: string[];
+   146→}
+   147→const parseFilterIntent = (q: string): FilterIntent | null => {
+   148→  const s = q.trim().toLowerCase();
+   149→  if (!s) return null;
+   150→  const intent: FilterIntent = { describe: [] };
+   151→
+   152→  /* platform tokens */
+   153→  if (/\b(?:x|twitter|tweets?)\b/.test(s)) {
+   154→    intent.platform = "x";
+   155→    intent.describe.push("X only");
+   156→  } else if (/\b(?:telegram|tg)\b/.test(s)) {
+   157→    intent.platform = "telegram";
+   158→    intent.describe.push("Telegram only");
+   159→  } else if (/\b(?:all|both|everything)\b/.test(s)) {
+   160→    intent.platform = "all";
+   161→    intent.describe.push("all platforms");
+   162→  }
+   163→
+   164→  /* range tokens */
+   165→  const lastDays = s.match(/last\s+(\d+)\s*days?/);
+   166→  if (/\b(?:24h|today|day)\b/.test(s)) {
+   167→    intent.range = "24h";
+   168→    intent.describe.push("24h window");
+   169→  } else if (/\b(?:7d|week)\b/.test(s)) {
+   170→    intent.range = "7d";
+   171→    intent.describe.push("7d window");
+   172→  } else if (/\b(?:30d|month)\b/.test(s)) {
+   173→    intent.range = "30d";
+   174→    intent.describe.push("30d window");
+   175→  } else if (lastDays) {
+   176→    const d = Math.min(90, Math.max(3, parseInt(lastDays[1], 10)));
+   177→    intent.range = "custom";
+   178→    intent.customDays = d;
+   179→    intent.describe.push(`${d}d window`);
+   180→  }
+   181→
+   182→  /* language tokens — first named language wins */
+   183→  const LANG_ALIASES: Record<string, string> = {
+   184→    hindi: "hi",
+   185→    हिन्दी: "hi",
+   186→    english: "en",
+   187→    hinglish: "hinglish",
+   188→    tamil: "ta",
+   189→    தமிழ்: "ta",
+   190→    telugu: "te",
+   191→    తెలుగు: "te",
+   192→    bengali: "bn",
+   193→    bangla: "bn",
+   194→    বাংলা: "bn",
+   195→    marathi: "mr",
+   196→    मराठी: "mr",
+   197→  };
+   198→  for (const [alias, code] of Object.entries(LANG_ALIASES)) {
+   199→    if (new RegExp(`\\b${alias}\\b`).test(s)) {
+   200→      intent.language = code;
+   201→      intent.describe.push(`${LANGUAGES.find((l) => l.code === code)?.label ?? alias} filter`);
+   202→      break;
+   203→    }
+   204→  }
+   205→
+   206→  return intent.describe.length ? intent : null;
+   207→};
+   208→
+   209→export function CommandPalette() {
+   210→  const [open, setOpen] = useState(false);
+   211→  /* live query feed (v0.16) — cmdk's onValueChange drives the
+   212→     natural-language compare intent below */
+   213→  const [query, setQuery] = useState("");
+   214→  const {
+   215→    go,
+   216→    setSelectedTopicId,
+   217→    setPlatform,
+   218→    resetFilters,
+   219→    toggleLanguage,
+   220→    setRange,
+   221→    setCustomDays,
+   222→    toggleWatchlist,
+   223→    filters,
+   224→    watchlist,
+   225→    setReportOpen,
+   226→    setMethodologyOpen,
+   227→    compareIds,
+   228→    setComparePair,
+   229→    setCompareOpen,
+   230→    setDossierDay,
+   231→  } = useApp();
+   232→
+   233→  const claims = getClaims({ ...filters, query: "" });
+   234→  const influencers = getInfluencers(filters, 6);
+   235→
+   236→  /* latest 30d spike day (falls back to the most recent day when the
+   237→     window is quiet) — the palette's day-dossier summon target */
+   238→  const dossierTarget = useMemo(() => {
+   239→    const days = getVolumeSeries({ ...filters, range: "30d" });
+   240→    const spike = [...days].reverse().find((d) => d.spike);
+   241→    return spike ?? days[days.length - 1];
+   242→  }, [filters]);
+   243→
+   244→  const nlCompare = useMemo(() => {
+   245→    const m = query.match(COMPARE_RE);
+   246→    if (!m) return null;
+   247→    const a = sideTopic(m[1]);
+   248→    const b = sideTopic(m[2]);
+   249→    if (!a || !b || a.id === b.id) return null;
+   250→    return { a, b };
+   251→  }, [query]);
+   252→
+   253→  /* v0.17 operator intents: goto / filter / watch */
+   254→  const nlGoto = useMemo(() => {
+   255→    const m = query.match(GOTO_RE);
+   256→    if (!m) return null;
+   257→    const mod = gotoModule(m[1]);
+   258→    return mod ? { mod } : null;
+   259→  }, [query]);
+   260→
+   261→  const nlFilter = useMemo(() => {
+   262→    const m = query.match(FILTER_RE);
+   263→    if (!m) return null;
+   264→    const intent = parseFilterIntent(m[1]);
+   265→    return intent ? { intent, raw: m[1].trim() } : null;
+   266→  }, [query]);
+   267→
+   268→  const nlWatch = useMemo(() => {
+   269→    const m = query.match(WATCH_RE);
+   270→    if (!m) return null;
+   271→    const t = sideTopic(m[1]);
+   272→    return t ? { t } : null;
+   273→  }, [query]);
+   274→
+   275→  useEffect(() => {
+   276→    const onKey = (e: KeyboardEvent) => {
+   277→      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+   278→        e.preventDefault();
+   279→        setOpen((v) => !v);
+   280→      }
+   281→    };
+   282→    document.addEventListener("keydown", onKey);
+   283→    return () => document.removeEventListener("keydown", onKey);
+   284→  }, []);
+   285→
+   286→  const openNarrative = (id: string) => {
+   287→    setSelectedTopicId(id);
+   288→    go("trends", { topicId: id });
+   289→    setOpen(false);
+   290→  };
+   291→
+   292→  return (
+   293→    <>
+   294→      {/* Palette opens via the ⌘K hotkey (and the sidebar/cheatsheet hints) —
+   295→          the hotkey listener below owns it; no visible trigger needed. */}
+   296→
+   297→      <CommandDialog
+   298→        open={open}
+   299→        onOpenChange={setOpen}
+   300→        title="TraceX command palette"
+   301→        description="Jump to modules, narratives, claims and filter actions"
+   302→        className="sm:max-w-xl"
+   303→        filter={tokenFilter}
+   304→      >
+   305→        <CommandInput
+   306→          placeholder="Search, or try: “goto bots” · “filter x 30d” · “compare X vs Y” · “watch neet”…"
+   307→          onValueChange={setQuery}
+   308→        />
+   309→        <CommandList className="max-h-[420px]">
+   310→          <CommandEmpty>No telemetry matches that query.</CommandEmpty>
+   311→
+   312→          <CommandGroup heading="Modules">
+   313→            {MODULES.map((m) => (
+   314→              <CommandItem
+   315→                key={m.id}
+   316→                value={`${m.code} ${m.label}`}
+   317→                onSelect={() => {
+   318→                  go(m.id);
+   319→                  setOpen(false);
+   320→                }}
+   321→              >
+   322→                <m.icon className="size-3.5 text-muted-foreground" />
+   323→                <span>{m.label}</span>
+   324→                <CommandShortcut className="font-mono text-[10px]">{m.code}</CommandShortcut>
+   325→              </CommandItem>
+   326→            ))}
+   327→          </CommandGroup>
+   328→
+   329→          <CommandSeparator />
+   330→
+   331→          <CommandGroup heading="Narratives">
+   332→            {TOPICS.map((t) => (
+   333→              <CommandItem key={t.id} value={`${t.id} ${t.label} ${t.gloss} ${t.category}`} onSelect={() => openNarrative(t.id)}>
+   334→                <Flame
+   335→                  className={
+   336→                    t.velocity === "surging"
+   337→                      ? "size-3.5 text-signal-orange"
+   338→                      : t.velocity === "rising"
+   339→                        ? "size-3.5 text-signal-green"
+   340→                        : "size-3.5 text-muted-foreground"
+   341→                  }
+   342→                />
+   343→                <span className="truncate max-w-56">{t.label}</span>
+   344→                <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">{t.gloss}</span>
+   345→                {watchlist.includes(t.id) && <Star className="size-3 fill-primary text-primary shrink-0" />}
+   346→                <CommandShortcut className="font-mono text-[10px] tnum">
+   347→                  {fmtCompact(t.baseVolume * 1.75)}
+   348→                </CommandShortcut>
+   349→              </CommandItem>
+   350→            ))}
+   351→          </CommandGroup>
+   352→
+   353→          <CommandSeparator />
+   354→
+   355→          {/* Natural-language compare (v0.16): "compare gaganyaan vs neet"
+   356→              resolves both sides and arms the global A/B pair — the item's
+   357→              value embeds the resolved ids/labels/glosses so the strict
+   358→              token filter keeps it ranked at the top */}
+   359→          {nlCompare && (
+   360→            <>
+   361→              <CommandGroup heading="Narrative A/B — natural language">
+   362→                <CommandItem
+   363→                  value={`compare ${nlCompare.a.id} vs ${nlCompare.b.id} ${nlCompare.a.label} ${nlCompare.b.label} ${nlCompare.a.gloss} ${nlCompare.b.gloss} versus ab pins`}
+   364→                  onSelect={() => {
+   365→                    setComparePair(nlCompare.a.id, nlCompare.b.id);
+   366→                    go("trends");
+   367→                    setCompareOpen(true);
+   368→                    setOpen(false);
+   369→                    toast(`A/B armed: ${nlCompare.a.label} vs ${nlCompare.b.label}`, {
+   370→                      description: "Pinned from the command palette — compare console opening.",
+   371→                    });
+   372→                  }}
+   373→                >
+   374→                  <GitCompareArrows className="size-3.5 text-primary" />
+   375→                  <span className="truncate max-w-64">
+   376→                    Compare {nlCompare.a.label} vs {nlCompare.b.label}
+   377→                  </span>
+   378→                  <CommandShortcut className="font-mono text-[10px]">A/B</CommandShortcut>
+   379→                </CommandItem>
+   380→              </CommandGroup>
+   381→              <CommandSeparator />
+   382→            </>
+   383→          )}
+   384→
+   385→          {/* Natural-language operator intents (v0.17): "goto bots",
+   386→              "filter x 30d" (composable platform/range/language) and
+   387→              "watch neet" — the same NL gesture class as "compare X vs Y" */}
+   388→          {nlGoto && (
+   389→            <>
+   390→              <CommandGroup heading="Natural language — navigation">
+   391→                <CommandItem
+   392→                  value={`goto go to open show module ${nlGoto.mod.id} ${nlGoto.mod.label} ${nlGoto.mod.code} navigation`}
+   393→                  onSelect={() => {
+   394→                    go(nlGoto.mod.id);
+   395→                    setOpen(false);
+   396→                    toast(`Jumped to ${nlGoto.mod.label}`, {
+   397→                      description: "Natural-language navigation from the command palette.",
+   398→                    });
+   399→                  }}
+   400→                >
+   401→                  <nlGoto.mod.icon className="size-3.5 text-primary" />
+   402→                  <span className="truncate max-w-64">Go to {nlGoto.mod.label}</span>
+   403→                  <CommandShortcut className="font-mono text-[10px]">{nlGoto.mod.code}</CommandShortcut>
+   404→                </CommandItem>
+   405→              </CommandGroup>
+   406→              <CommandSeparator />
+   407→            </>
+   408→          )}
+   409→
+   410→          {nlFilter && (
+   411→            <>
+   412→              <CommandGroup heading="Natural language — filter bank">
+   413→                <CommandItem
+   414→                  value={`filter set use platform range language intent ${nlFilter.raw} ${nlFilter.intent.describe.join(" ")} filters bank`}
+   415→                  onSelect={() => {
+   416→                    const { intent } = nlFilter;
+   417→                    if (intent.platform) setPlatform(intent.platform);
+   418→                    if (intent.range === "custom" && intent.customDays) {
+   419→                      setCustomDays(intent.customDays);
+   420→                    } else if (intent.range) {
+   421→                      setRange(intent.range);
+   422→                    }
+   423→                    if (intent.language) toggleLanguage(intent.language);
+   424→                    setOpen(false);
+   425→                    toast("Filter bank updated", {
+   426→                      description: intent.describe.join(" · ") + " — natural-language intent applied.",
+   427→                    });
+   428→                  }}
+   429→                >
+   430→                  <SlidersHorizontal className="size-3.5 text-primary" />
+   431→                  <span className="truncate max-w-64">Apply {nlFilter.intent.describe.join(" · ")}</span>
+   432→                  <span className="text-[10px] font-mono text-muted-foreground truncate hidden sm:inline">
+   433→                    “{nlFilter.raw}”
+   434→                  </span>
+   435→                  <CommandShortcut className="font-mono text-[10px]">FILTER</CommandShortcut>
+   436→                </CommandItem>
+   437→              </CommandGroup>
+   438→              <CommandSeparator />
+   439→            </>
+   440→          )}
+   441→
+   442→          {nlWatch && (
+   443→            <>
+   444→              <CommandGroup heading="Natural language — watchlist">
+   445→                <CommandItem
+   446→                  value={`watch star follow ${nlWatch.t.id} ${nlWatch.t.label} ${nlWatch.t.gloss} watchlist`}
+   447→                  onSelect={() => {
+   448→                    toggleWatchlist(nlWatch.t.id);
+   449→                    setOpen(false);
+   450→                    toast(
+   451→                      watchlist.includes(nlWatch.t.id)
+   452→                        ? `Removed from watchlist: ${nlWatch.t.label}`
+   453→                        : `Watching: ${nlWatch.t.label}`,
+   454→                      {
+   455→                        description: "Natural-language watchlist intent from the command palette.",
+   456→                      }
+   457→                    );
+   458→                  }}
+   459→                >
+   460→                  <Star className={cn("size-3.5", watchlist.includes(nlWatch.t.id) ? "fill-primary text-primary" : "text-primary")} />
+   461→                  <span className="truncate max-w-64">
+   462→                    {watchlist.includes(nlWatch.t.id) ? "Unwatch" : "Watch"} {nlWatch.t.label}
+   463→                  </span>
+   464→                  <span className="text-[10px] font-mono text-muted-foreground tnum">
+   465→                    {fmtCompact(nlWatch.t.baseVolume * 1.75)}
+   466→                  </span>
+   467→                  <CommandShortcut className="font-mono text-[10px]">
+   468→                    {watchlist.includes(nlWatch.t.id) ? "UNWATCH" : "WATCH"}
+   469→                  </CommandShortcut>
+   470→                </CommandItem>
+   471→              </CommandGroup>
+   472→              <CommandSeparator />
+   473→            </>
+   474→          )}
+   475→
+   476→          {/* A/B compare + matrix (v0.15 → v0.17): appears once two or more
+   477→              narratives are pinned — 2 pins open the A/B dossier, 3–6 the
+   478→              rank matrix; pins are global state, so this works from any screen */}
+   479→          {compareIds.length >= 2 && (
+   480→            <>
+   481→              <CommandGroup heading={compareIds.length >= 3 ? "Narrative compare — matrix" : "Narrative compare — pinned pair"}>
+   482→                <CommandItem
+   483→                  value={`compare ab matrix versus rank ${compareIds.join(" ")} ${compareIds.map(compareLabel).join(" ")} ${compareIds.map(compareGloss).join(" ")} pins`}
+   484→                  onSelect={() => {
+   485→                    go("trends");
+   486→                    setCompareOpen(true);
+   487→                    setOpen(false);
+   488→                  }}
+   489→                >
+   490→                  <GitCompareArrows className="size-3.5 text-primary" />
+   491→                  <span className="truncate max-w-64">
+   492→                    {compareIds.length >= 3
+   493→                      ? `Compare ${compareIds.length} narratives (rank matrix)`
+   494→                      : `Compare ${compareLabel(compareIds[0])} vs ${compareLabel(compareIds[1])}`}
+   495→                  </span>
+   496→                  <CommandShortcut className="font-mono text-[10px]">
+   497→                    {compareIds.length >= 3 ? "MATRIX" : "A/B"}
+   498→                  </CommandShortcut>
+   499→                </CommandItem>
+   500→              </CommandGroup>
+   501→              <CommandSeparator />
+   502→            </>
+   503→          )}
+   504→
+   505→          {/* Day-level intelligence (v0.16): summon the decomposed day
+   506→              dossier for the window's latest spike — same dialog the
+   507→              temporal replay and the shareable day links open */}
+   508→          {dossierTarget && (
+   509→            <>
+   510→              <CommandGroup heading="Day-level intelligence">
+   511→                <CommandItem
+   512→                  value={`day dossier ${dossierTarget.spike ? "spike" : "calendar"} heat inspect decompose anomaly ${dossierTarget.label}`}
+   513→                  onSelect={() => {
+   514→                    go("overview");
+   515→                    setDossierDay(dossierTarget.t);
+   516→                    setOpen(false);
+   517→                  }}
+   518→                >
+   519→                  <CalendarSearch className="size-3.5 text-primary" />
+   520→                  <span>Day dossier — {dossierTarget.spike ? "latest spike day" : "latest day"}</span>
+   521→                  <span className="text-[10px] font-mono text-muted-foreground truncate hidden sm:inline">
+   522→                    {fmtDayIST(dossierTarget.t)}
+   523→                  </span>
+   524→                  <CommandShortcut className="font-mono text-[10px]">
+   525→                    {dossierTarget.spike ? "SPIKE" : "30D"}
+   526→                  </CommandShortcut>
+   527→                </CommandItem>
+   528→              </CommandGroup>
+   529→              <CommandSeparator />
+   530→            </>
+   531→          )}
+   532→
+   533→          <CommandGroup heading="Claims — misinformation radar">
+   534→            {claims.slice(0, 8).map((c) => (
+   535→              <CommandItem
+   536→                key={c.id}
+   537→                value={`${c.text} ${c.translation ?? ""} ${c.status} ${c.id}`}
+   538→                onSelect={() => {
+   539→                  go("misinfo", { claimId: c.id });
+   540→                  setOpen(false);
+   541→                  toast(`Dossier ${c.id} opened`, { description: c.text.slice(0, 90) + "…" });
+   542→                }}
+   543→              >
+   544→                <ShieldAlert
+   545→                  className={
+   546→                    c.risk >= 0.75
+   547→                      ? "size-3.5 text-signal-red"
+   548→                      : c.risk >= 0.45
+   549→                        ? "size-3.5 text-signal-amber"
+   550→                        : "size-3.5 text-signal-green"
+   551→                  }
+   552→                />
+   553→                <span className="truncate max-w-72">{c.text}</span>
+   554→                <CommandShortcut className="font-mono text-[10px]">
+   555→                  {c.id} · {c.status}
+   556→                </CommandShortcut>
+   557→              </CommandItem>
+   558→            ))}
+   559→          </CommandGroup>
+   560→
+   561→          <CommandSeparator />
+   562→
+   563→          <CommandGroup heading="Influencers — network graph">
+   564→            {influencers.map((inf) => (
+   565→              <CommandItem
+   566→                key={inf.nodeId}
+   567→                value={`${inf.handle} ${inf.nodeId} ${inf.communityLabel}`}
+   568→                onSelect={() => {
+   569→                  go("network");
+   570→                  setOpen(false);
+   571→                }}
+   572→              >
+   573→                <AtSign className="size-3.5 text-muted-foreground" />
+   574→                <span className="font-mono text-xs truncate">{inf.handle}</span>
+   575→                <span className="text-[10px] text-muted-foreground truncate hidden sm:inline">
+   576→                  {inf.communityLabel}
+   577→                </span>
+   578→                <CommandShortcut className="font-mono text-[10px] tnum">
+   579→                  PR {inf.pageRank.toFixed(3)}
+   580→                </CommandShortcut>
+   581→              </CommandItem>
+   582→            ))}
+   583→          </CommandGroup>
+   584→
+   585→          <CommandSeparator />
+   586→
+   587→          <CommandGroup heading="Filter bank &amp; actions">
+   588→            {(Object.keys(PLATFORM_META) as (keyof typeof PLATFORM_META)[]).map((p) => {
+   589→              const meta = PLATFORM_META[p];
+   590→              return (
+   591→                <CommandItem
+   592→                  key={p}
+   593→                  value={`platform ${p}`}
+   594→                  onSelect={() => {
+   595→                    setPlatform(p);
+   596→                    setOpen(false);
+   597→                    toast(`Filter bank set: ${meta.label}`);
+   598→                  }}
+   599→                >
+   600→                  <meta.icon className="size-3.5 text-muted-foreground" />
+   601→                  <span>{meta.label}</span>
+   602→                  {filters.platform === p && <CommandShortcut>active</CommandShortcut>}
+   603→                </CommandItem>
+   604→              );
+   605→            })}
+   606→            <CommandItem
+   607→              value="language hinglish toggle"
+   608→              onSelect={() => {
+   609→                toggleLanguage("hinglish");
+   610→                setOpen(false);
+   611→              }}
+   612→            >
+   613→              <Languages className="size-3.5 text-muted-foreground" />
+   614→              <span>Toggle Hinglish language filter</span>
+   615→              {filters.languages.includes("hinglish") && <CommandShortcut>active</CommandShortcut>}
+   616→            </CommandItem>
+   617→            {LANGUAGES.filter((l) => l.code !== "hinglish").slice(0, 2).map((l) => (
+   618→              <CommandItem
+   619→                key={l.code}
+   620→                value={`language ${l.label} toggle`}
+   621→                onSelect={() => {
+   622→                  toggleLanguage(l.code);
+   623→                  setOpen(false);
+   624→                }}
+   625→              >
+   626→                <Languages className="size-3.5 text-muted-foreground" />
+   627→                <span>Toggle {l.label} ({l.native}) filter</span>
+   628→                {filters.languages.includes(l.code) && <CommandShortcut>active</CommandShortcut>}
+   629→              </CommandItem>
+   630→            ))}
+   631→            <CommandItem
+   632→              value="reset filters clear"
+   633→              onSelect={() => {
+   634→                resetFilters();
+   635→                setOpen(false);
+   636→                toast("Filter bank reset");
+   637→              }}
+   638→            >
+   639→              <RotateCcw className="size-3.5 text-muted-foreground" />
+   640→              <span>Reset entire filter bank</span>
+   641→            </CommandItem>
+   642→            <CommandItem
+   643→              value="generate report export"
+   644→              onSelect={() => {
+   645→                setReportOpen(true);
+   646→                setOpen(false);
+   647→              }}
+   648→            >
+   649→              <FileDown className="size-3.5 text-muted-foreground" />
+   650→              <span>Generate intelligence report</span>
+   651→            </CommandItem>
+   652→            <CommandItem
+   653→              value="tour replay guided walkthrough onboarding start"
+   654→              onSelect={() => {
+   655→                setOpen(false);
+   656→                startGuidedTour();
+   657→              }}
+   658→            >
+   659→              <Footprints className="size-3.5 text-muted-foreground" />
+   660→              <span>Replay the guided console tour</span>
+   661→            </CommandItem>
+   662→            <CommandItem
+   663→              value="methodology data provenance privacy scoring how it works"
+   664→              onSelect={() => {
+   665→                setMethodologyOpen(true);
+   666→                setOpen(false);
+   667→              }}
+   668→            >
+   669→              <FlaskConical className="size-3.5 text-muted-foreground" />
+   670→              <span>Methodology &amp; data provenance</span>
+   671→            </CommandItem>
+   672→          </CommandGroup>
+   673→        </CommandList>
+   674→
+   675→        <div className="border-t border-border px-3 py-1.5 flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
+   676→          <span className="flex items-center gap-1.5">
+   677→            <kbd className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-sm border border-border bg-muted/50 text-[9px]">↑↓</kbd>
+   678→            navigate
+   679→          </span>
+   680→          <span className="flex items-center gap-1.5">
+   681→            <kbd className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-sm border border-border bg-muted/50 text-[9px]">↵</kbd>
+   682→            execute
+   683→          </span>
+   684→          <span className="flex items-center gap-1.5">
+   685→            <kbd className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-sm border border-border bg-muted/50 text-[9px]">esc</kbd>
+   686→            close
+   687→          </span>
+   688→          <span className="ml-auto flex items-center gap-1">
+   689→            <Star className="size-2.5 text-primary" />
+   690→            {watchlist.length} watched
+   691→          </span>
+   692→          <span className="flex items-center gap-1">
+   693→            <Radar className="size-2.5 text-signal-green" />
+   694→            live {relTime(NOW)} ago
+   695→          </span>
+   696→        </div>
+   697→      </CommandDialog>
+   698→    </>
+   699→  );
+   700→}
+   701→

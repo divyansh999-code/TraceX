@@ -3,7 +3,9 @@
 /**
  * Persistent left navigation spine — flexible across every viewport:
  *  · lg−xl desktops: the familiar full rail (w-60) or a user-collapsed
- *    icon rail (w-[60px]), toggle persisted per browser;
+ *    icon rail (w-[60px]); the width toggle lives in the BRAND row at the
+ *    top (expand/collapse is a header gesture, not a footer one) and is
+ *    persisted per browser;
  *  · below md: the same spine rides in a slide-over drawer summoned from
  *    the top bar's menu button (single navigation surface everywhere).
  * Visual design and hierarchy are unchanged — only the flexibility moved.
@@ -14,7 +16,7 @@ import { useApp } from "@/lib/app-state";
 import { TraceXLogo, TraceXMark } from "../common/TraceXLogo";
 import { Sparkline } from "../common/Sparkline";
 import { CHART } from "../common/ChartBits";
-import { getAlerts, getTopicById, getTopicSeries } from "@/lib/mock";
+import { getAlerts, getClaims, getTopicById, getTopicSeries } from "@/lib/mock";
 import { fmtCompact } from "@/lib/fmt";
 import {
   Sheet,
@@ -29,10 +31,8 @@ import {
   HeartPulse,
   Users,
   Network,
-  Bot,
-  Radar,
-  BellRing,
   ShieldCheck,
+  BellRing,
   Activity,
   Star,
   Command,
@@ -52,9 +52,8 @@ const NAV: {
   { id: "sentiment", code: "03", label: "Sentiment & Emotion", icon: HeartPulse },
   { id: "demographics", code: "04", label: "Demographics", icon: Users },
   { id: "network", code: "05", label: "Network & Influence", icon: Network },
-  { id: "bots", code: "06", label: "Bot Detection", icon: Bot },
-  { id: "misinfo", code: "07", label: "Misinformation Radar", icon: Radar },
-  { id: "alerts", code: "08", label: "Alerts & Reports", icon: BellRing },
+  { id: "integrity", code: "06", label: "Information Integrity", icon: ShieldCheck },
+  { id: "alerts", code: "07", label: "Alerts & Reports", icon: BellRing },
 ];
 
 const COLLAPSE_KEY = "tracex.sidebar.collapsed";
@@ -70,6 +69,10 @@ interface BodyProps {
 function SidebarBody({ collapsed, sheet = false, onNavigate, onToggleCollapse }: BodyProps) {
   const { screen, go, filters, watchlist } = useApp();
   const newAlerts = getAlerts().filter((a) => a.status === "New").length;
+  /* claims needing triage — drives the amber badge on the integrity item */
+  const claimsOpen = getClaims(filters).filter(
+    (c) => c.status === "False" || c.status === "Disputed"
+  ).length;
 
   const nav = (id: ScreenId, opts?: { topicId?: string }) => {
     go(id, opts);
@@ -78,15 +81,47 @@ function SidebarBody({ collapsed, sheet = false, onNavigate, onToggleCollapse }:
 
   return (
     <>
-      {/* Brand */}
-      <div
-        className={cn(
-          "h-14 flex items-center border-b border-sidebar-border shrink-0",
-          collapsed && !sheet ? "justify-center px-0" : "px-4"
-        )}
-      >
-        {collapsed && !sheet ? <TraceXMark size={28} /> : <TraceXLogo />}
-      </div>
+      {/* Brand + width toggle — the collapse control lives at the TOP of the
+          spine. Expanded: wordmark with the toggle flush right. Collapsed:
+          the mark stacks over the expand control. Drawers keep a plain brand
+          row (the sheet provides its own close affordance). */}
+      {sheet ? (
+        <div className="h-14 flex items-center border-b border-sidebar-border shrink-0 px-4">
+          <TraceXLogo />
+        </div>
+      ) : collapsed ? (
+        <div className="py-2.5 flex flex-col items-center gap-1 border-b border-sidebar-border shrink-0">
+          <TraceXMark size={26} />
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              title="Expand sidebar"
+              aria-label="Expand sidebar"
+              aria-pressed={false}
+              className="size-7 rounded-md flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent/60 transition-colors cursor-pointer"
+            >
+              <PanelLeftOpen className="size-3.5" />
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="h-14 flex items-center gap-2 border-b border-sidebar-border shrink-0 pl-4 pr-2">
+          <TraceXLogo />
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+              aria-pressed={false}
+              className="ml-auto size-7 rounded-md flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent/60 transition-colors cursor-pointer shrink-0"
+            >
+              <PanelLeftClose className="size-3.5" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Navigation */}
       <nav
@@ -139,14 +174,15 @@ function SidebarBody({ collapsed, sheet = false, onNavigate, onToggleCollapse }:
                       {newAlerts}
                     </span>
                   )}
-                  {item.id === "misinfo" && (
+                  {item.id === "integrity" && claimsOpen > 0 && (
                     <span
                       className={cn(
                         "font-mono text-[10px] tnum text-signal-amber bg-signal-amber/10 border border-signal-amber/30 rounded-sm px-1.5 py-0.5",
                         collapsed && !sheet ? "hidden" : "ml-auto"
                       )}
+                      title={`${claimsOpen} false/disputed claims in play`}
                     >
-                      2
+                      {claimsOpen}
                     </span>
                   )}
                 </button>
@@ -213,7 +249,7 @@ function SidebarBody({ collapsed, sheet = false, onNavigate, onToggleCollapse }:
           <Command className="size-2.5" />
           <span>K palette</span>
           <span className="mx-1 text-border">·</span>
-          <span>1–8 modules</span>
+          <span>1–7 modules</span>
         </div>
       )}
 
@@ -279,32 +315,6 @@ function SidebarBody({ collapsed, sheet = false, onNavigate, onToggleCollapse }:
           </div>
         )}
       </div>
-
-      {/* Rail-width toggle (desktop spine only) */}
-      {!sheet && onToggleCollapse && (
-        <div className="border-t border-sidebar-border shrink-0">
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-pressed={collapsed}
-            className={cn(
-              "w-full h-9 flex items-center gap-2.5 text-[10px] font-mono text-muted-foreground/60",
-              "hover:text-foreground hover:bg-sidebar-accent/40 transition-colors cursor-pointer",
-              collapsed ? "justify-center px-0" : "px-4"
-            )}
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="size-3.5" />
-            ) : (
-              <>
-                <PanelLeftClose className="size-3.5" />
-                <span>Collapse</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
     </>
   );
 }

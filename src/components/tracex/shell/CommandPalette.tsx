@@ -24,8 +24,8 @@ import {
   HeartPulse,
   Users,
   Network,
-  Bot,
   Radar,
+  ShieldCheck,
   BellRing,
   Star,
   Flame,
@@ -53,9 +53,8 @@ const MODULES: { id: ScreenId; code: string; label: string; icon: typeof LayoutD
   { id: "sentiment", code: "03", label: "Sentiment & Emotion", icon: HeartPulse },
   { id: "demographics", code: "04", label: "Demographics", icon: Users },
   { id: "network", code: "05", label: "Network & Influence", icon: Network },
-  { id: "bots", code: "06", label: "Bot Detection", icon: Bot },
-  { id: "misinfo", code: "07", label: "Misinformation Radar", icon: Radar },
-  { id: "alerts", code: "08", label: "Alerts & Reports", icon: BellRing },
+  { id: "integrity", code: "06", label: "Information Integrity — Bots & Misinfo", icon: ShieldCheck },
+  { id: "alerts", code: "07", label: "Alerts & Reports", icon: BellRing },
 ];
 
 /* bare ids + glosses keep romanized search working for the compare entry */
@@ -123,15 +122,26 @@ const sideTopic = (q: string) => {
 const gotoModule = (q: string) => {
   const s = q.trim().toLowerCase();
   if (!s) return undefined;
+  /* pre-merge module names still resolve — "goto bots" / "goto misinfo"
+     land on the matching half of the merged integrity console */
+  const ALIASES: Record<string, ScreenId> = {
+    bots: "integrity",
+    botsview: "integrity",
+    misinfo: "integrity",
+    misinformation: "integrity",
+    radar: "integrity",
+  };
   return (
     MODULES.find(
       (m) =>
         m.id === s ||
         m.label.toLowerCase().includes(s) ||
         m.code === s ||
-        /* friendly aliases: "bots", "misinfo", "graph", "alerts"… */
+        /* friendly aliases: "integrity", "graph", "alerts"… */
         (s.length >= 3 && m.id.includes(s.replace(/\s+/g, "")))
-    ) ?? (s === "graph" ? MODULES.find((m) => m.id === "network") : undefined)
+    ) ??
+    (ALIASES[s.replace(/\s+/g, "")] ? MODULES.find((m) => m.id === ALIASES[s.replace(/\s+/g, "")]) : undefined) ??
+    (s === "graph" ? MODULES.find((m) => m.id === "network") : undefined)
   );
 };
 
@@ -303,7 +313,7 @@ export function CommandPalette() {
         filter={tokenFilter}
       >
         <CommandInput
-          placeholder="Search, or try: “goto bots” · “filter x 30d” · “compare X vs Y” · “watch neet”…"
+          placeholder="Search, or try: “goto integrity” · “filter x 30d” · “compare X vs Y” · “watch neet”…"
           onValueChange={setQuery}
         />
         <CommandList className="max-h-[420px]">
@@ -536,7 +546,7 @@ export function CommandPalette() {
                 key={c.id}
                 value={`${c.text} ${c.translation ?? ""} ${c.status} ${c.id}`}
                 onSelect={() => {
-                  go("misinfo", { claimId: c.id });
+                  go("integrity", { claimId: c.id, view: "claims" });
                   setOpen(false);
                   toast(`Dossier ${c.id} opened`, { description: c.text.slice(0, 90) + "…" });
                 }}

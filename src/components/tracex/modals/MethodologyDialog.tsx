@@ -79,7 +79,7 @@ const QUESTIONS: { icon: typeof TrendingUp; q: string; a: string; mod: string; g
     icon: Network,
     q: "WHO",
     a: "amplifies it — PageRank over the reply/mention/repost graph, plus bot-probability for inorganic accounts.",
-    mod: "05 · Network / 06 · Bots",
+    mod: "05 · Network / 06 · Integrity",
     goTo: "network",
   },
   {

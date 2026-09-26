@@ -481,7 +481,8 @@ export const ALERT_POOL: IntelligenceAlert[] = [
     detail: "340 accounts acting in unison; 71% duplicate media hashes; targeting MSP hashtags.",
     t: NOW - 48 * 60_000,
     status: "New",
-    linkScreen: "bots",
+    linkScreen: "integrity",
+    linkView: "bots",
   },
   {
     id: "ALR-9018",
@@ -491,7 +492,8 @@ export const ALERT_POOL: IntelligenceAlert[] = [
     detail: "Unverified claim risk 0.86, bot correlation 0.79, 2.6M reach in 5h. Escalated for takedown review.",
     t: NOW - 2.2 * 3.6e6,
     status: "New",
-    linkScreen: "misinfo",
+    linkScreen: "integrity",
+    linkView: "claims",
   },
   {
     id: "ALR-9017",
@@ -523,7 +525,8 @@ export const ALERT_POOL: IntelligenceAlert[] = [
     detail: "112 channels forwarding identical media within 8s median; keyword: 'bijli bill'.",
     t: NOW - 8 * 3.6e6,
     status: "Acknowledged",
-    linkScreen: "bots",
+    linkScreen: "integrity",
+    linkView: "bots",
   },
   {
     id: "ALR-9012",
@@ -533,7 +536,8 @@ export const ALERT_POOL: IntelligenceAlert[] = [
     detail: "Risk 0.71; first detected 52h ago; still compounding at 12k posts/hour.",
     t: NOW - 11 * 3.6e6,
     status: "Resolved",
-    linkScreen: "misinfo",
+    linkScreen: "integrity",
+    linkView: "claims",
   },
   {
     id: "ALR-9010",
@@ -565,7 +569,8 @@ export const ALERT_POOL: IntelligenceAlert[] = [
     detail: "Posting cadence normalised; bot score fell below 0.5 threshold.",
     t: NOW - 22 * 3.6e6,
     status: "Resolved",
-    linkScreen: "bots",
+    linkScreen: "integrity",
+    linkView: "bots",
   },
   {
     id: "ALR-9004",
@@ -575,7 +580,8 @@ export const ALERT_POOL: IntelligenceAlert[] = [
     detail: "Recycled screenshot detected from 2023 archive; 34k shares in 2h.",
     t: NOW - 26 * 3.6e6,
     status: "Acknowledged",
-    linkScreen: "misinfo",
+    linkScreen: "integrity",
+    linkView: "claims",
   },
   {
     id: "ALR-9002",
@@ -606,7 +612,8 @@ export const LIVE_ALERT_TEMPLATES: Omit<IntelligenceAlert, "id" | "t">[] = [
     title: "Amplification burst — TX-88 fringe",
     detail: "19 sibling accounts began posting within 6s of each other; escalating.",
     status: "New",
-    linkScreen: "bots",
+    linkScreen: "integrity",
+    linkView: "bots",
   },
   {
     type: "misinformation",
@@ -614,7 +621,8 @@ export const LIVE_ALERT_TEMPLATES: Omit<IntelligenceAlert, "id" | "t">[] = [
     title: "Claim re-emergence flagged",
     detail: "Previously disputed claim text re-matched at 0.92 similarity score.",
     status: "New",
-    linkScreen: "misinfo",
+    linkScreen: "integrity",
+    linkView: "claims",
   },
   {
     type: "sentiment-shift",

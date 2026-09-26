@@ -35,9 +35,8 @@ const SHORTCUTS: { group: string; items: Hotkey[] }[] = [
       { keys: ["3"], label: "03 · Sentiment & Emotion" },
       { keys: ["4"], label: "04 · Demographics" },
       { keys: ["5"], label: "05 · Network & Influence" },
-      { keys: ["6"], label: "06 · Bot Detection" },
-      { keys: ["7"], label: "07 · Misinformation Radar" },
-      { keys: ["8"], label: "08 · Alerts & Reports" },
+      { keys: ["6"], label: "06 · Information Integrity — bots + misinformation" },
+      { keys: ["7"], label: "07 · Alerts & Reports" },
     ],
   },
   {

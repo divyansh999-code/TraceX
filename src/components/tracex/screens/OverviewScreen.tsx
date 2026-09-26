@@ -57,7 +57,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import type { ScreenId } from "@/lib/mock/types";
+import type { IntegrityView, ScreenId } from "@/lib/mock/types";
 
 const WINDOW_LABEL: Record<string, string> = {
   "24h": "last 24 hours",
@@ -91,7 +91,7 @@ function LiveAlertFeed() {
           <button
             key={a.id}
             type="button"
-            onClick={() => a.linkScreen && go(a.linkScreen)}
+            onClick={() => a.linkScreen && go(a.linkScreen, a.linkView ? { view: a.linkView } : undefined)}
             title={`${a.id} — ${a.title}: ${a.detail}`}
             className="feed-arrival w-full text-left px-4 py-2.5 hover:bg-accent transition-colors cursor-pointer group"
           >
@@ -242,14 +242,21 @@ function NetworkPreview() {
 
 /* ---------------- Module pipeline strip ---------------- */
 
-const MODULES: { icon: typeof Database; name: string; metric: string; spark: number[]; screen: ScreenId }[] = [
+const MODULES: {
+  icon: typeof Database;
+  name: string;
+  metric: string;
+  spark: number[];
+  screen: ScreenId;
+  view?: IntegrityView;
+}[] = [
   { icon: Database, name: "API Ingestion", metric: "12.4k/min", spark: [8, 9, 11, 10, 12, 13, 12, 14, 13, 15], screen: "overview" },
   { icon: Fingerprint, name: "Demographics", metric: "k≥50", spark: [5, 6, 5, 7, 6, 6, 7, 6, 7, 7], screen: "demographics" },
   { icon: HeartPulse, name: "Sentiment", metric: "7 langs", spark: [4, 5, 6, 5, 6, 7, 6, 7, 8, 7], screen: "sentiment" },
   { icon: Flame, name: "Trend Detection", metric: "z>2.5", spark: [3, 5, 4, 6, 8, 7, 9, 11, 10, 12], screen: "trends" },
-  { icon: Bot, name: "Bot Detection", metric: "5k sample", spark: [2, 3, 2, 4, 3, 5, 4, 6, 5, 6], screen: "bots" },
+  { icon: Bot, name: "Bot Detection", metric: "5k sample", spark: [2, 3, 2, 4, 3, 5, 4, 6, 5, 6], screen: "integrity", view: "bots" },
   { icon: Share2, name: "Network Analysis", metric: "90 nodes", spark: [6, 6, 7, 7, 8, 8, 9, 8, 9, 10], screen: "network" },
-  { icon: ShieldAlert, name: "Misinformation", metric: "10 claims", spark: [4, 5, 7, 6, 8, 9, 8, 10, 11, 12], screen: "misinfo" },
+  { icon: ShieldAlert, name: "Misinformation", metric: "10 claims", spark: [4, 5, 7, 6, 8, 9, 8, 10, 11, 12], screen: "integrity", view: "claims" },
   { icon: Layers, name: "Intelligence Fusion", metric: "this view", spark: [7, 8, 8, 9, 10, 9, 10, 11, 12, 13], screen: "overview" },
 ];
 
@@ -261,8 +268,8 @@ function ModuleStrip() {
         <button
           key={m.name}
           type="button"
-          onClick={() => go(m.screen)}
-          title={`Open the ${m.screen} module — pipeline stage: ${m.name.toLowerCase()}`}
+          onClick={() => go(m.screen, m.view ? { view: m.view } : undefined)}
+          title={`Open the ${m.screen} module${m.view ? ` · ${m.view} view` : ""} — pipeline stage: ${m.name.toLowerCase()}`}
           className="group text-left bg-card border border-border rounded-lg p-3 hover:border-primary/50 hover:bg-accent/40 transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-2">

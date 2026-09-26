@@ -63,14 +63,14 @@ const STEPS: TourStep[] = [
     ),
   },
   {
-    title: "Eight analysis modules",
+    title: "Seven analysis modules",
     target: '[data-tour="module-rail"]',
     body: (
       <p>
         One rail, four intelligence questions: <span className="text-foreground">WHAT</span> (trends) ·{" "}
-        <span className="text-foreground">WHO</span> (network, bots) ·{" "}
+        <span className="text-foreground">WHO</span> (network, integrity) ·{" "}
         <span className="text-foreground">WHERE</span> (propagation) ·{" "}
-        <span className="text-foreground">HOW</span> (sentiment). Keys <span className="font-mono">1–8</span>{" "}
+        <span className="text-foreground">HOW</span> (sentiment). Keys <span className="font-mono">1–7</span>{" "}
         jump anywhere.
       </p>
     ),
@@ -129,7 +129,7 @@ const STEPS: TourStep[] = [
         <p>
           <span className="font-mono text-foreground">⌘K</span> opens the command palette — it speaks
           operator sentences: <span className="font-mono text-foreground">compare x vs y</span>,{" "}
-          <span className="font-mono text-foreground">goto bots</span>,{" "}
+          <span className="font-mono text-foreground">goto integrity</span>,{" "}
           <span className="font-mono text-foreground">filter x 30d</span> or{" "}
           <span className="font-mono text-foreground">watch neet</span>; pin 3–6 narratives for the rank
           matrix; <span className="font-mono text-foreground">?</span> lists every shortcut, and generated

@@ -49,9 +49,8 @@ const SCREEN_META: Record<ScreenId, { code: string; label: string }> = {
   sentiment: { code: "03", label: "SENTIMENT & EMOTION" },
   demographics: { code: "04", label: "DEMOGRAPHICS" },
   network: { code: "05", label: "NETWORK & INFLUENCE" },
-  bots: { code: "06", label: "BOT DETECTION" },
-  misinfo: { code: "07", label: "MISINFORMATION RADAR" },
-  alerts: { code: "08", label: "ALERTS & REPORTS" },
+  integrity: { code: "06", label: "INFORMATION INTEGRITY" },
+  alerts: { code: "07", label: "ALERTS & REPORTS" },
 };
 
 function XGlyph({ className }: { className?: string }) {

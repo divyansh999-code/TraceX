@@ -57,7 +57,7 @@ export function HintStrip({ className }: { className?: string }) {
         palette
       </span>
       <span className="inline-flex items-center gap-1">
-        <KbdKey className="min-w-4 h-4 px-1 text-[9px]">1–8</KbdKey>
+        <KbdKey className="min-w-4 h-4 px-1 text-[9px]">1–7</KbdKey>
         modules
       </span>
       <span className="hidden md:inline-flex items-center gap-1">

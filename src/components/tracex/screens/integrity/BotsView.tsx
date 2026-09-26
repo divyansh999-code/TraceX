@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * BOT DETECTION — MODULE 06.
+ * INFORMATION INTEGRITY · BOTS VIEW (the former MODULE 06 console).
  * Behavioural scoring of a 5k account sample: age × frequency scatter,
  * bot-probability distribution, flagged-account watchlist, and
  * coordinated cluster forensics with mini topology diagrams.
+ * Mounted inside IntegrityScreen — the header + view switcher live there.
  */
 import { useMemo, useState } from "react";
 import { useApp } from "@/lib/app-state";
@@ -21,12 +22,11 @@ import {
   MetricRow,
   Legend,
   Chip,
-} from "../common/primitives";
-import { KpiCard } from "../common/KpiCard";
-import { Sparkline } from "../common/Sparkline";
-import { ScreenHeader } from "../common/ScreenHeader";
-import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
-import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
+} from "../../common/primitives";
+import { KpiCard } from "../../common/KpiCard";
+import { Sparkline } from "../../common/Sparkline";
+import { ChartTooltip, CHART, GRID, useChartTheme } from "../../common/ChartBits";
+import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../../common/Skeletons";
 import {
   ResponsiveContainer,
   ScatterChart,
@@ -50,6 +50,7 @@ import {
   BarChart3,
   ScatterChart as ScatterIcon,
   Table as TableIcon,
+  Radar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -165,11 +166,11 @@ function ClusterCard({ cluster, nodeById }: { cluster: BotCluster; nodeById: Map
   );
 }
 
-/* ---------------- screen ---------------- */
+/* ---------------- view ---------------- */
 
-export function BotScreen() {
-  const { filters } = useApp();
-  const ready = useRefresh("bots");
+export function BotsView() {
+  const { filters, setIntegrityView } = useApp();
+  const ready = useRefresh("integrity-bots");
   const chartTheme = useChartTheme();
 
   const bots = useMemo(() => getBots(filters), [filters]);
@@ -222,61 +223,7 @@ export function BotScreen() {
   const stats = bots.stats;
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-300">
-      <ScreenHeader
-        kicker="MODULE 06 // BOT DETECTION"
-        title="Bot Detection & Coordinated Behaviour"
-        description="Behavioural scoring across a rotating 5,000-account sample — posting frequency, account age, duplicate content and timing anomalies — with coordinated cluster forensics and a flagged-account watchlist."
-        right={
-          <div className="flex items-center gap-2">
-            <Badge tone="red" dot>{fmtFull(stats.flaggedAccounts)} flagged</Badge>
-            <Badge tone="amber" dot>{(stats.botShare * 100).toFixed(1)}% bot share</Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-[11px] gap-1.5"
-              title="Export the visible flagged-account table as CSV"
-              onClick={() => {
-                downloadCsv(
-                  `tracex-flagged-accounts-${csvStamp()}.csv`,
-                  [
-                    "handle",
-                    "id",
-                    "platform",
-                    "bot_prob",
-                    "posts_per_day",
-                    "account_age_days",
-                    "duplicate_pct",
-                    "timing_anomaly",
-                    "cluster",
-                    "cluster_size",
-                    "first_seen",
-                  ],
-                  rows.map((b) => [
-                    b.handle,
-                    b.id,
-                    b.platform === "x" ? "X" : "TG",
-                    b.botProb.toFixed(2),
-                    b.postsPerDay,
-                    b.accountAgeDays,
-                    b.dupPct,
-                    b.timingAnomaly.toFixed(2),
-                    b.clusterId ?? "—",
-                    b.clusterSize,
-                    new Date(b.firstSeen).toISOString(),
-                  ])
-                );
-                toast("Flagged accounts exported", {
-                  description: `${rows.length} rows · botProb ≥ 0.50 · ${scopeLabel} scope.`,
-                });
-              }}
-            >
-              <Download className="size-3.5" /> Export watchlist
-            </Button>
-          </div>
-        }
-      />
-
+    <>
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard
@@ -478,15 +425,57 @@ export function BotScreen() {
         </Panel>
       </div>
 
-      {/* Flagged accounts table */}
+      {/* Flagged accounts table — export lives with the table it exports */}
       <Panel
         title="Flagged accounts"
         sub="botProb ≥ 0.50"
         icon={TableIcon}
         bodyClassName="p-0"
         right={
-          <span className="font-mono text-[10px] tnum text-muted-foreground">
-            {rows.length} shown · sort {probSort === "desc" ? "↓" : "↑"} botProb
+          <span className="flex items-center gap-2 font-mono text-[10px] tnum text-muted-foreground">
+            <span>{rows.length} shown · sort {probSort === "desc" ? "↓" : "↑"} botProb</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px] gap-1"
+              title="Export the visible flagged-account table as CSV"
+              onClick={() => {
+                downloadCsv(
+                  `tracex-flagged-accounts-${csvStamp()}.csv`,
+                  [
+                    "handle",
+                    "id",
+                    "platform",
+                    "bot_prob",
+                    "posts_per_day",
+                    "account_age_days",
+                    "duplicate_pct",
+                    "timing_anomaly",
+                    "cluster",
+                    "cluster_size",
+                    "first_seen",
+                  ],
+                  rows.map((b) => [
+                    b.handle,
+                    b.id,
+                    b.platform === "x" ? "X" : "TG",
+                    b.botProb.toFixed(2),
+                    b.postsPerDay,
+                    b.accountAgeDays,
+                    b.dupPct,
+                    b.timingAnomaly.toFixed(2),
+                    b.clusterId ?? "—",
+                    b.clusterSize,
+                    new Date(b.firstSeen).toISOString(),
+                  ])
+                );
+                toast("Flagged accounts exported", {
+                  description: `${rows.length} rows · botProb ≥ 0.50 · ${scopeLabel} scope.`,
+                });
+              }}
+            >
+              <Download className="size-3" /> CSV
+            </Button>
           </span>
         }
       >
@@ -592,12 +581,25 @@ export function BotScreen() {
         </div>
       </Panel>
 
-      {/* Coordinated clusters */}
+      {/* Coordinated clusters — with a hand-off into the claims radar */}
       <Panel
         title="Coordinated activity clusters"
         sub="sync + shared media"
         icon={Network}
-        right={<Badge tone="amber" dot>{bots.clusters.length} active</Badge>}
+        right={
+          <span className="flex items-center gap-2.5">
+            <Badge tone="amber" dot>{bots.clusters.length} active</Badge>
+            <button
+              type="button"
+              onClick={() => setIntegrityView("claims")}
+              title="Open the claims radar — narratives these clusters amplify"
+              className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-primary hover:text-primary/80 transition-colors cursor-pointer"
+            >
+              claims in play
+              <Radar className="size-3" />
+            </button>
+          </span>
+        }
       >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {bots.clusters.map((c) => (
@@ -611,6 +613,6 @@ export function BotScreen() {
         Behavioural scoring on a rotating 5k account sample · signals: frequency, account age, duplication,
         timing · {scopeLabel} · rolling 24h re-score
       </div>
-    </div>
+    </>
   );
 }

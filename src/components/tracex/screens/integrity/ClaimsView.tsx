@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * MISINFORMATION RADAR — claim extraction, fact-check cross-referencing,
- * bot-correlation scoring and cross-platform spread mapping.
+ * INFORMATION INTEGRITY · CLAIMS VIEW (the former MODULE 07 console).
+ * Claim extraction, fact-check cross-referencing, bot-correlation
+ * scoring and cross-platform spread mapping.
  * Two-column operating view: extraction list + selected claim dossier.
+ * Mounted inside IntegrityScreen — the header + view switcher live there.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/app-state";
@@ -19,11 +21,10 @@ import {
   MonoTag,
   MetricRow,
   type Tone,
-} from "../common/primitives";
-import { KpiCard } from "../common/KpiCard";
-import { ScreenHeader } from "../common/ScreenHeader";
-import { CHART, ChartTooltip, GRID, useChartTheme } from "../common/ChartBits";
-import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
+} from "../../common/primitives";
+import { KpiCard } from "../../common/KpiCard";
+import { CHART, ChartTooltip, GRID, useChartTheme } from "../../common/ChartBits";
+import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../../common/Skeletons";
 import { cn } from "@/lib/utils";
 import {
   ResponsiveContainer,
@@ -169,7 +170,7 @@ function ClaimNotebook({ claimId }: { claimId: string }) {
 }
 
 function ClaimDossier({ claim }: { claim: Claim }) {
-  const { go } = useApp();
+  const { go, setIntegrityView } = useApp();
   const chartTheme = useChartTheme();
   const topic = getTopicById(claim.topicId);
 
@@ -232,11 +233,22 @@ function ClaimDossier({ claim }: { claim: Claim }) {
         </ul>
       </div>
 
-      {/* bot correlation */}
+      {/* bot correlation — with a hand-off into the merged bots view */}
       <div className="mt-4 pt-3 border-t border-border/60">
         <div className="flex items-center justify-between gap-2">
           <Taxonomy>Bot correlation</Taxonomy>
-          <Badge tone={corrTone}>{corrLabel}</Badge>
+          <span className="flex items-center gap-2.5">
+            <Badge tone={corrTone}>{corrLabel}</Badge>
+            <button
+              type="button"
+              onClick={() => setIntegrityView("bots")}
+              title="Open the bot forensics view — flagged accounts and clusters"
+              className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-primary hover:text-primary/80 transition-colors cursor-pointer"
+            >
+              inspect bots
+              <Bot className="size-3" />
+            </button>
+          </span>
         </div>
         <ScoreBar value={claim.botCorrelation} showValue className="mt-2" />
         <p className="mt-1.5 text-[10px] text-muted-foreground leading-relaxed">
@@ -395,18 +407,18 @@ function ClaimDossier({ claim }: { claim: Claim }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Main screen                                                         */
+/* Claims view                                                         */
 /* ------------------------------------------------------------------ */
 
-export function MisinfoScreen() {
+export function ClaimsView() {
   const { filters, selectedClaimId, setSelectedClaimId, claimNotes } = useApp();
-  const ready = useRefresh("misinfo");
+  const ready = useRefresh("integrity-claims");
 
   const claims = useMemo(() => getClaims(filters), [filters]);
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   /* dossier selection lives in the global bus so the ⌘K palette and
-     deep-links (#/misinfo/claim:CLM-004) can open a dossier directly. */
+     deep-links (#/integrity/claim:CLM-004) can open a dossier directly. */
   const selectedId = selectedClaimId;
   const setSelectedId = setSelectedClaimId;
 
@@ -447,8 +459,6 @@ export function MisinfoScreen() {
   const botCorrelated = claims.filter((c) => c.botCorrelation >= 0.5);
 
   const windowLabel = WINDOW_LABEL[filters.range] ?? "window";
-  const platformLabel =
-    filters.platform === "all" ? "X + Telegram" : filters.platform === "x" ? "X only" : "Telegram only";
   const riskSpark = useMemo(() => sorted.map((c) => c.risk), [sorted]);
   const botSpark = useMemo(() => claims.map((c) => c.botCorrelation).sort((a, b) => a - b), [claims]);
 
@@ -465,37 +475,7 @@ export function MisinfoScreen() {
   }
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-300">
-      <ScreenHeader
-        kicker="MODULE 07 // MISINFORMATION RADAR"
-        title="Misinformation Radar"
-        description={`Claims extracted from the monitored stream, cross-referenced against fact-check corpora and tracked as they propagate across X and Telegram — ${windowLabel}. Select a claim to open its dossier.`}
-        right={
-          <div className="flex items-center gap-2">
-            <Badge tone="cyan" dot>
-              {platformLabel}
-            </Badge>
-            <Badge tone={riskTone(avgRisk)} dot>
-              avg risk {total ? avgRisk.toFixed(2) : "—"}
-            </Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-[11px] gap-1.5"
-              onClick={() => {
-                const top = sorted[0];
-                if (!top) return;
-                toast("Claim escalated", {
-                  description: `${top.id} routed to the fact-check escalation queue.`,
-                });
-              }}
-            >
-              <ShieldAlert className="size-3.5" /> Escalate top claim
-            </Button>
-          </div>
-        }
-      />
-
+    <>
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard
@@ -546,7 +526,7 @@ export function MisinfoScreen() {
         />
       </div>
 
-      {/* filter bank */}
+      {/* filter bank + escalate action */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
         <div className="flex items-center gap-1.5 flex-wrap">
           <Taxonomy className="hidden sm:inline">Risk</Taxonomy>
@@ -565,8 +545,25 @@ export function MisinfoScreen() {
             </Chip>
           ))}
         </div>
-        <span className="ml-auto font-mono text-[10px] tnum text-muted-foreground whitespace-nowrap">
-          {filtered.length} of {total} claims
+        <span className="ml-auto flex items-center gap-3">
+          <span className="font-mono text-[10px] tnum text-muted-foreground whitespace-nowrap">
+            {filtered.length} of {total} claims
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-[10px] gap-1"
+            title="Route the highest-risk claim to the fact-check escalation queue"
+            onClick={() => {
+              const top = sorted[0];
+              if (!top) return;
+              toast("Claim escalated", {
+                description: `${top.id} routed to the fact-check escalation queue.`,
+              });
+            }}
+          >
+            <ShieldAlert className="size-3" /> Escalate top claim
+          </Button>
         </span>
       </div>
 
@@ -716,6 +713,6 @@ export function MisinfoScreen() {
         Cross-referenced against PIB Fact Check · BOOM Live · Alt News · Factly · Snopes · window {windowLabel} ·
         generated {relTime(NOW)} ago · verified across four independent desks
       </div>
-    </div>
+    </>
   );
 }

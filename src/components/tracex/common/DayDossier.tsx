@@ -257,8 +257,8 @@ export function DayDossier({
             <Taxonomy>Bot suspects</Taxonomy>
             <button
               type="button"
-              onClick={() => go("bots")}
-              title="Open Bot Detection — full flagged-accounts table"
+              onClick={() => go("integrity", { view: "bots" })}
+              title="Open Information Integrity — full flagged-accounts table"
               className="ml-auto inline-flex items-center gap-1 h-5 px-1.5 rounded-sm border border-border text-[9px] font-mono text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors cursor-pointer"
             >
               <Bot className="size-2.5" />

@@ -25,20 +25,18 @@ import { TrendsScreen } from "./screens/TrendsScreen";
 import { SentimentScreen } from "./screens/SentimentScreen";
 import { DemographicsScreen } from "./screens/DemographicsScreen";
 import { NetworkScreen } from "./screens/NetworkScreen";
-import { BotScreen } from "./screens/BotScreen";
-import { MisinfoScreen } from "./screens/MisinfoScreen";
+import { IntegrityScreen } from "./screens/integrity/IntegrityScreen";
 import { AlertsScreen } from "./screens/AlertsScreen";
 import type { ScreenId } from "@/lib/mock/types";
 
-/** Hotkey order — module keys 1–8 (mirrors the sidebar rail order). */
+/** Hotkey order — module keys 1–7 (mirrors the sidebar rail order). */
 const HOTKEY_ORDER: ScreenId[] = [
   "overview",
   "trends",
   "sentiment",
   "demographics",
   "network",
-  "bots",
-  "misinfo",
+  "integrity",
   "alerts",
 ];
 
@@ -59,15 +57,14 @@ function ModuleCanvas() {
         {screen === "sentiment" && <SentimentScreen />}
         {screen === "demographics" && <DemographicsScreen />}
         {screen === "network" && <NetworkScreen />}
-        {screen === "bots" && <BotScreen />}
-        {screen === "misinfo" && <MisinfoScreen />}
+        {screen === "integrity" && <IntegrityScreen />}
         {screen === "alerts" && <AlertsScreen />}
       </motion.div>
     </AnimatePresence>
   );
 }
 
-/** Global hotkeys: 1–8 switch modules (muted while the guided tour runs). */
+/** Global hotkeys: 1–7 switch modules (muted while the guided tour runs). */
 function ModuleHotkeys() {
   const { go } = useApp();
   useEffect(() => {
@@ -78,7 +75,7 @@ function ModuleHotkeys() {
       /* the guided tour owns keyboard focus while it walks the console */
       if (document.body.classList.contains("tour-active")) return;
       const idx = parseInt(e.key, 10);
-      if (idx >= 1 && idx <= 8) {
+      if (idx >= 1 && idx <= HOTKEY_ORDER.length) {
         go(HOTKEY_ORDER[idx - 1]);
       }
     };
@@ -102,8 +99,7 @@ const TITLE_LABEL: Record<ScreenId, string> = {
   sentiment: "Sentiment & Emotion",
   demographics: "Demographics",
   network: "Interaction Graph",
-  bots: "Bot Detection",
-  misinfo: "Misinformation Radar",
+  integrity: "Information Integrity",
   alerts: "Alerts & Reports",
 };
 function DocumentTitle() {
