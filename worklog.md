@@ -517,3 +517,25 @@ Stage Summary:
 - New connective tissue from the merge: dossier↔forensics cross-links ("inspect bots" / "claims in play"), live sidebar claims badge, view-aware alert links, shareable `#/integrity/view:<v>` URLs.
 - Files added: src/components/tracex/screens/integrity/{IntegrityScreen,BotsView,ClaimsView}.tsx. Files deleted: screens/BotScreen.tsx, screens/MisinfoScreen.tsx. Files changed: mock/types.ts, app-state.tsx, live-feed.ts, mock/content.ts, TraceXApp.tsx, Sidebar.tsx, TopBar.tsx, CommandPalette.tsx, HotkeyHelp.tsx, Kbd.tsx, GuidedTour.tsx, StatusBar.tsx, MethodologyDialog.tsx, DayDossier.tsx, OverviewScreen.tsx, AlertsBell.tsx, AlertsScreen.tsx.
 - Remaining risks/ideas for next round: claim deep-link hash still appends a stale topicId when arriving from a narrative (pre-existing cosmetic behaviour); consider keyboard [ / ] or B/C shortcuts for view switching inside integrity; integrity switcher could show a tiny sparkline per view; consider surfacing "goto bots"→bots-view (vs remembered view) semantics for the palette alias; saved-view machinery still dead weight in app-state/localStorage.
+
+---
+Task ID: 26
+Agent: main (Z.ai Code)
+Task: User request — "in sentiment composition time and also in every other graph add timestamps"
+
+Work Log:
+- Root-caused via code read + agent-browser: every numeric `t` XAxis used `tickFormatter={(t) => series.find(s => s.t === t)?.label ?? ""}`. Recharts' auto "nice" ticks on an epoch axis land BETWEEN buckets, so `find` failed for all interior ticks → charts rendered with only 2 edge labels (or none). Second latent bug: tooltip `label` read `(props as {payload?: {t}}).payload?.t` — recharts passes `payload` as an ARRAY of entries, so every tooltip header was silently blank.
+- fmt.ts: added `fmtStamp(t)` — "26 Sep · 14:30" IST stamp for tooltips + offset axes.
+- mock/series.ts: `pointLabel` now IST-pinned (Asia/Kolkata) and the 7-day "3h" bucket kind renders "dd MMM HH:MM" (was bare wall-clock time, ambiguous across days). Exported `bucketKind(range)` + `bucketFullLabel(t, range)` (tooltip-grade: date+clock for sub-day kinds, day label for day kinds); re-exported through mock/index.ts.
+- ChartBits.tsx (NEW shared infra): `useElementWidth` (ResizeObserver) + `useTimeTicks(series, opts)` — pins ticks to actual bucket epochs (evenly indexed) and scales tick count to measured chart width ÷ label pixel width (min 2/3, max 6), so wide panels get 5-6 timestamps and mobile gets 3-4 with zero collisions. Also `tooltipEpoch(props)` / `tooltipPoint(props)` — correct extraction of the hovered bucket epoch / data row from recharts' array-shaped payload.
+- Applied to all 8 time-based graphs: SentimentScreen composition (primary ask), OverviewScreen volume×sentiment (ticks span chartData incl. replay ghost), TrendsScreen main "Narrative velocity" + drill-sheet velocity (narrow variant: min2/max4/charPx5.5), CompareDialog matrix overlay + pair overlay. All tooltips now render full timestamps; spike/shift badges fixed to read the data row properly.
+- ClaimsView "Cross-platform propagation": axis switched from "Xh" offsets to REAL absolute timestamps (`firstSeen + h·3.6e6` → fmtStamp), 4 bucket-aligned category ticks, tooltip shows "T+12h · 25 Sept · 19:02", new "T0 {fmtStamp(firstSeen)}" caption beside the panel label.
+- DemographicsScreen "Activity rhythm": hour-of-day ticks now clock-formatted "00:00/04:00/…:00" (was raw 0,4,8…).
+- QA (agent-browser): verified timestamps on all charts — sentiment 7d (5× "19 Sept 15:56"-style), 24h (5× clock times), 30d (5× day labels), Overview, Trends main+sheet, Compare dialog (6 ticks), claims propagation (4 abs stamps + T0 + tooltip offset+stamp), demographics clock labels. Tooltips all show full "dd Sept · HH:MM" headers (verified via DOM + vision). Mobile 375px: 7d = 4 labels, 30d = 5 labels, no overlap/clipping (adaptive density works). Hotkey sweep 1-7: zero console errors/warnings; lint 0/0; tsc 0 src errors; dev.log clean.
+- NOTE: `agent-browser keyboard type "3"` doesn't trigger hotkeys — use `agent-browser press 3` (key event path).
+
+Stage Summary:
+- Every graph in the console now displays real, readable timestamps: bucket-aligned width-adaptive axis ticks (3-6 depending on panel width), full IST date+clock tooltip headers (previously blank), date+time labels on 7-day windows (previously ambiguous bare times), absolute wall-clock stamps + T0 anchor on the claim propagation chart, and clock-formatted hour-of-day on the activity rhythm chart.
+- Two latent bugs fixed en route: blank interior axis labels (nice-tick misalignment) and blank tooltip headers (recharts payload array misuse) — both pre-existing since v0.10.
+- Infrastructure for the next rounds: `useTimeTicks` / `tooltipEpoch` / `tooltipPoint` in ChartBits are drop-in for any future chart.
+- Remaining risks/ideas for next round: KPI sparklines have no time context (by design — tiny); sentiment shift-alert rows show "dd MMM HH:MM → dd MMM HH:MM" windows (long but unambiguous); could add an "as of HH:MM IST" refresh stamp to panel subs; claims propagation tick minutes (07:02) could round to hour boundaries for tidier labels.

@@ -1,6 +1,7 @@
 import { rngFrom } from "./rng";
 import { TOPICS, CLAIMS, NOW } from "./content";
 import { getBots } from "./network";
+import { fmtStamp } from "../fmt";
 import type {
   Filters,
   Kpis,
@@ -69,12 +70,43 @@ function cycleFactor(hourOfDay: number, kind: "hour" | "3h" | "day"): number {
   return 0.35 + morning * 0.5 + lunch * 0.35 + evening * 0.9;
 }
 
+const IST = "Asia/Kolkata";
+
 function pointLabel(t: number, kind: "hour" | "3h" | "day"): string {
   const d = new Date(t);
   if (kind === "day") {
-    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: IST });
   }
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (kind === "3h") {
+    // multi-day window at 3h buckets — date + clock so every axis tick is
+    // an unambiguous timestamp instead of a bare wall-clock time
+    const day = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: IST });
+    const clk = d.toLocaleTimeString("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: IST,
+    });
+    return `${day} ${clk}`;
+  }
+  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST });
+}
+
+/** Bucket granularity for a range selection — shared by axis + tooltip labelling. */
+export function bucketKind(range: Filters["range"]): "hour" | "3h" | "day" {
+  if (range === "24h") return "hour";
+  if (range === "7d") return "3h";
+  return "day"; // 30d + custom
+}
+
+/** Tooltip-grade timestamp for a bucket epoch — date + clock for sub-day
+ *  buckets, day label for day buckets. Always IST, always in sync with
+ *  pointLabel() so the axis and the tooltip never disagree. */
+export function bucketFullLabel(t: number, range: Filters["range"]): string {
+  if (bucketKind(range) === "day") {
+    return new Date(t).toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: IST });
+  }
+  return fmtStamp(t);
 }
 
 /** Volume multiplier for platform filter. */

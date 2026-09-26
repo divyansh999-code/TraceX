@@ -14,6 +14,7 @@ import {
   getTopicSeries,
   getNetwork,
   getInfluencers,
+  bucketFullLabel,
   NOW,
 } from "@/lib/mock";
 import { fmtCompact, fmtNet, relTime, riskTone, sentimentTone, fmtSigned } from "@/lib/fmt";
@@ -22,7 +23,7 @@ import { Panel, Badge, Delta, ScoreBar, SeverityDot, LiveDot, Legend, Taxonomy }
 import { KpiCard } from "../common/KpiCard";
 import { Sparkline } from "../common/Sparkline";
 import { ScreenHeader } from "../common/ScreenHeader";
-import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
+import { ChartTooltip, CHART, GRID, useChartTheme, useTimeTicks, tooltipEpoch, tooltipPoint } from "../common/ChartBits";
 import { useRefresh, useNow, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
 import type { HeatDay } from "../common/HeatCalendar";
 import { TimeMachine } from "../common/TimeMachine";
@@ -398,6 +399,9 @@ export function OverviewScreen() {
       ),
     [series, effCursor]
   );
+  /* bucket-aligned, width-aware time ticks (span the full window incl. the
+     replay ghost so the upcoming stretch is time-anchored too) */
+  const [volChartRef, volTimeTicks] = useTimeTicks(chartData);
 
   /* trending rows during replay: only narratives that have actually
      emerged by the playhead, ranked by their as-of growth rate, with
@@ -550,7 +554,7 @@ export function OverviewScreen() {
             />
           }
         >
-          <div className="h-64 md:h-72 -mx-1">
+          <div ref={volChartRef} className="h-64 md:h-72 -mx-1">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <defs>
@@ -572,11 +576,8 @@ export function OverviewScreen() {
                   dataKey="t"
                   type="number"
                   domain={["dataMin", "dataMax"]}
-                  tickFormatter={(t: number) => {
-                    const p = series.find((s) => s.t === t);
-                    return p?.label ?? "";
-                  }}
-                  minTickGap={filters.range === "30d" ? 24 : filters.range === "7d" ? 36 : 48}
+                  ticks={volTimeTicks.ticks}
+                  tickFormatter={volTimeTicks.tickFormatter}
                   tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                   axisLine={{ stroke: chartTheme.grid }}
                   tickLine={false}
@@ -593,14 +594,12 @@ export function OverviewScreen() {
                   content={(props) => (
                     <ChartTooltip
                       {...props}
-                      label={
-                        (() => {
-                          const p = series.find((s) => s.t === (props as { payload?: { t?: number } }).payload?.t);
-                          return p?.label ?? "";
-                        })()
-                      }
+                      label={(() => {
+                        const t = tooltipEpoch(props);
+                        return t !== undefined ? bucketFullLabel(t, filters.range) : "";
+                      })()}
                       labelExtra={
-                        (props as { payload?: { spike?: boolean } }).payload?.spike ? (
+                        tooltipPoint<{ spike?: boolean }>(props)?.spike ? (
                           <Badge tone="amber">spike</Badge>
                         ) : null
                       }

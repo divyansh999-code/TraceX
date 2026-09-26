@@ -62,6 +62,24 @@ export function fmtDayIST(t: number): string {
   });
 }
 
+/** Date + clock stamp, e.g. "26 Sep · 14:30" (IST) — full-precision
+ *  timestamp for chart tooltips and offset-based axes. */
+export function fmtStamp(t: number): string {
+  const d = new Date(t);
+  const day = d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "Asia/Kolkata",
+  });
+  const clk = d.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Kolkata",
+  });
+  return `${day} · ${clk}`;
+}
+
 /** Compact relative time, e.g. "22m", "3.4h", "2d" */
 export function relTime(t: number, now: number = Date.now()): string {
   const diff = Math.max(0, now - t);

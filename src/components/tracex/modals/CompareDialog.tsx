@@ -14,11 +14,11 @@
  */
 import { useMemo } from "react";
 import type { Filters, Topic } from "@/lib/mock/types";
-import { getTopicSeries } from "@/lib/mock";
+import { getTopicSeries, bucketFullLabel } from "@/lib/mock";
 import { fmtCompact, fmtNet, sentimentTone } from "@/lib/fmt";
 import { cn } from "@/lib/utils";
 import { Badge, ScoreBar, Taxonomy, Legend } from "../common/primitives";
-import { CHART, ChartTooltip, GRID, useChartTheme } from "../common/ChartBits";
+import { CHART, ChartTooltip, GRID, useChartTheme, useTimeTicks, tooltipEpoch, tooltipPoint } from "../common/ChartBits";
 import {
   Dialog,
   DialogContent,
@@ -253,6 +253,7 @@ function MatrixView({
       return row;
     });
   }, [topics, filters]);
+  const [matrixChartRef, matrixTimeTicks] = useTimeTicks(velocityData);
 
   const n = rows.length;
   const leaderLabel = leaders.length === 1 ? leaders[0].id : null;
@@ -303,7 +304,7 @@ function MatrixView({
             ))}
           </div>
         </div>
-        <div className="h-52 -mx-1">
+        <div ref={matrixChartRef} className="h-52 -mx-1">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={velocityData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid stroke={chartTheme.grid} strokeDasharray={GRID.strokeDasharray} vertical={GRID.vertical} />
@@ -311,8 +312,8 @@ function MatrixView({
                 dataKey="t"
                 type="number"
                 domain={["dataMin", "dataMax"]}
-                tickFormatter={(t: number) => velocityData.find((p) => p.t === t)?.label ?? ""}
-                minTickGap={40}
+                ticks={matrixTimeTicks.ticks}
+                tickFormatter={matrixTimeTicks.tickFormatter}
                 tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                 axisLine={{ stroke: chartTheme.grid }}
                 tickLine={false}
@@ -329,7 +330,10 @@ function MatrixView({
                 content={(props) => (
                   <ChartTooltip
                     {...props}
-                    label={(props as { payload?: { label?: string } }).payload?.label ?? ""}
+                    label={(() => {
+                      const t = tooltipEpoch(props);
+                      return t !== undefined ? bucketFullLabel(t, filters.range) : "";
+                    })()}
                   />
                 )}
               />
@@ -498,6 +502,7 @@ function AbView({
     const volB = sb.reduce((x, p) => x + p.total, 0);
     return { data, volA, volB };
   }, [topics, filters]);
+  const [pairChartRef, pairTimeTicks] = useTimeTicks(seriesPair.data);
 
   /* ---- verdict (v0.15): auto-computed winner sentence from the lead cells ---- */
   const verdict = useMemo(() => {
@@ -604,7 +609,7 @@ function AbView({
             <Legend items={[{ label: `A · ${a.label}`, color: CHART.orange }, { label: `B · ${b.label}`, color: CHART.cyan }]} />
           </div>
         </div>
-        <div className="h-52 -mx-1">
+        <div ref={pairChartRef} className="h-52 -mx-1">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={seriesPair.data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid stroke={chartTheme.grid} strokeDasharray={GRID.strokeDasharray} vertical={GRID.vertical} />
@@ -612,8 +617,8 @@ function AbView({
                 dataKey="t"
                 type="number"
                 domain={["dataMin", "dataMax"]}
-                tickFormatter={(t: number) => seriesPair.data.find((p) => p.t === t)?.label ?? ""}
-                minTickGap={40}
+                ticks={pairTimeTicks.ticks}
+                tickFormatter={pairTimeTicks.tickFormatter}
                 tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                 axisLine={{ stroke: chartTheme.grid }}
                 tickLine={false}
@@ -630,7 +635,10 @@ function AbView({
                 content={(props) => (
                   <ChartTooltip
                     {...props}
-                    label={(props as { payload?: { label?: string } }).payload?.label ?? ""}
+                    label={(() => {
+                      const t = tooltipEpoch(props);
+                      return t !== undefined ? bucketFullLabel(t, filters.range) : "";
+                    })()}
                   />
                 )}
               />

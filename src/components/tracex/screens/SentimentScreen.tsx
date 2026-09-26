@@ -14,6 +14,7 @@ import {
   getEmotions,
   getSentimentShifts,
   getTopicSentimentTable,
+  bucketFullLabel,
   type VolumePoint,
 } from "@/lib/mock";
 import { fmtCompact, fmtNet, sentimentTone } from "@/lib/fmt";
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { Panel, Badge, Delta, Legend } from "../common/primitives";
 import { KpiCard } from "../common/KpiCard";
 import { ScreenHeader } from "../common/ScreenHeader";
-import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
+import { ChartTooltip, CHART, GRID, useChartTheme, useTimeTicks, tooltipEpoch, tooltipPoint } from "../common/ChartBits";
 import { useRefresh, KpiRowSkeleton, PanelSkeleton } from "../common/Skeletons";
 import {
   ResponsiveContainer,
@@ -91,6 +92,8 @@ export function SentimentScreen() {
 
   const kpis = useMemo(() => getKpis(filters), [filters]);
   const series = useMemo(() => getVolumeSeries(filters), [filters]);
+  /* bucket-aligned, width-aware time ticks for the composition chart */
+  const [compChartRef, compTimeTicks] = useTimeTicks(series);
   const emotions = useMemo(() => getEmotions(filters), [filters]);
   const shifts = useMemo(() => getSentimentShifts(filters), [filters]);
   const table = useMemo(() => getTopicSentimentTable(filters), [filters]);
@@ -238,7 +241,7 @@ export function SentimentScreen() {
             />
           }
         >
-          <div className="h-64 md:h-72 -mx-1">
+          <div ref={compChartRef} className="h-64 md:h-72 -mx-1">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <defs>
@@ -260,11 +263,8 @@ export function SentimentScreen() {
                   dataKey="t"
                   type="number"
                   domain={["dataMin", "dataMax"]}
-                  tickFormatter={(t: number) => {
-                    const p = series.find((s) => s.t === t);
-                    return p?.label ?? "";
-                  }}
-                  minTickGap={48}
+                  ticks={compTimeTicks.ticks}
+                  tickFormatter={compTimeTicks.tickFormatter}
                   tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                   axisLine={{ stroke: chartTheme.grid }}
                   tickLine={false}
@@ -282,11 +282,11 @@ export function SentimentScreen() {
                     <ChartTooltip
                       {...props}
                       label={(() => {
-                        const p = series.find((s) => s.t === (props as { payload?: { t?: number } }).payload?.t);
-                        return p?.label ?? "";
+                        const t = tooltipEpoch(props);
+                        return t !== undefined ? bucketFullLabel(t, filters.range) : "";
                       })()}
                       labelExtra={
-                        shifts.some((s) => s.t === (props as { payload?: { t?: number } }).payload?.t) ? (
+                        shifts.some((s) => s.t === tooltipEpoch(props)) ? (
                           <Badge tone="amber">shift</Badge>
                         ) : null
                       }

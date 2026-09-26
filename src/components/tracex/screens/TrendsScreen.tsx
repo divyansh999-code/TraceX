@@ -12,6 +12,7 @@ import {
   getTopicSeries,
   getTopicById,
   getSamplePosts,
+  bucketFullLabel,
   LANGUAGES,
   NOW,
   type Topic,
@@ -25,7 +26,7 @@ import { Panel, Badge, Delta, ScoreBar, Legend, Chip, MetricRow, Taxonomy } from
 import { Sparkline } from "../common/Sparkline";
 import { HeatCalendar } from "../common/HeatCalendar";
 import { ScreenHeader } from "../common/ScreenHeader";
-import { ChartTooltip, CHART, GRID, useChartTheme } from "../common/ChartBits";
+import { ChartTooltip, CHART, GRID, useChartTheme, useTimeTicks, tooltipEpoch, tooltipPoint } from "../common/ChartBits";
 import { useRefresh, PanelSkeleton } from "../common/Skeletons";
 import {
   ResponsiveContainer,
@@ -168,6 +169,13 @@ function TopicDrill({
     { name: "Telegram", value: tgVol },
   ];
   const velocity = series.slice(-14).map((p) => ({ t: p.t, label: p.label, v: p.total }));
+  /* narrow sheet chart — fewer, smaller ticks, still bucket-aligned */
+  const [velRef, velTicks] = useTimeTicks<HTMLDivElement>(velocity, {
+    min: 2,
+    max: 4,
+    charPx: 5.5,
+    gapPx: 14,
+  });
 
   const s = topic.sentiment;
   const dom =
@@ -299,7 +307,7 @@ function TopicDrill({
 
           <div className="border border-border rounded-md p-3 min-w-0">
             <Taxonomy>Velocity</Taxonomy>
-            <div className="h-32 -mx-1 mt-1">
+            <div ref={velRef} className="h-32 -mx-1 mt-1">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={velocity} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
                   <defs>
@@ -312,11 +320,8 @@ function TopicDrill({
                     dataKey="t"
                     type="number"
                     domain={["dataMin", "dataMax"]}
-                    tickFormatter={(t: number) => {
-                      const p = velocity.find((s) => s.t === t);
-                      return p?.label ?? "";
-                    }}
-                    minTickGap={40}
+                    ticks={velTicks.ticks}
+                    tickFormatter={velTicks.tickFormatter}
                     tick={{ fontSize: 9, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                     axisLine={{ stroke: chartTheme.grid }}
                     tickLine={false}
@@ -329,10 +334,8 @@ function TopicDrill({
                       <ChartTooltip
                         {...props}
                         label={(() => {
-                          const p = velocity.find(
-                            (s) => s.t === (props as { payload?: { t?: number } }).payload?.t
-                          );
-                          return p?.label ?? "";
+                          const t = tooltipEpoch(props);
+                          return t !== undefined ? bucketFullLabel(t, filters.range) : "";
                         })()}
                       />
                     )}
@@ -439,6 +442,8 @@ export function TrendsScreen() {
     if (activeTopic) return getTopicSeries(activeTopic, filters);
     return [];
   }, [activeRow, activeTopic, filters]);
+  /* bucket-aligned, width-aware time ticks for the main velocity chart */
+  const [mainVelRef, mainVelTicks] = useTimeTicks(activeSeries);
 
   /* drill-down sheet lifecycle */
   const sheetTopic = getTopicById(selectedTopicId);
@@ -616,7 +621,7 @@ export function TrendsScreen() {
           />
         }
       >
-        <div className="h-72 md:h-80 -mx-1">
+        <div ref={mainVelRef} className="h-72 md:h-80 -mx-1">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={activeSeries} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
               <defs>
@@ -630,11 +635,8 @@ export function TrendsScreen() {
                 dataKey="t"
                 type="number"
                 domain={["dataMin", "dataMax"]}
-                tickFormatter={(t: number) => {
-                  const p = activeSeries.find((s) => s.t === t);
-                  return p?.label ?? "";
-                }}
-                minTickGap={48}
+                ticks={mainVelTicks.ticks}
+                tickFormatter={mainVelTicks.tickFormatter}
                 tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                 axisLine={{ stroke: chartTheme.grid }}
                 tickLine={false}
@@ -652,13 +654,11 @@ export function TrendsScreen() {
                   <ChartTooltip
                     {...props}
                     label={(() => {
-                      const p = activeSeries.find(
-                        (s) => s.t === (props as { payload?: { t?: number } }).payload?.t
-                      );
-                      return p?.label ?? "";
+                      const t = tooltipEpoch(props);
+                      return t !== undefined ? bucketFullLabel(t, filters.range) : "";
                     })()}
                     labelExtra={
-                      (props as { payload?: { spike?: boolean } }).payload?.spike ? (
+                      tooltipPoint<{ spike?: boolean }>(props)?.spike ? (
                         <Badge tone="amber">spike</Badge>
                       ) : null
                     }

@@ -10,6 +10,8 @@ import {
   effectiveTopics,
   getTopicSeries,
   getDayDossier,
+  bucketKind,
+  bucketFullLabel,
 } from "./series";
 import { getNetwork, getInfluencers, getPropagation, getBots } from "./network";
 
@@ -24,6 +26,8 @@ export {
   effectiveTopics,
   getTopicSeries,
   getDayDossier,
+  bucketKind,
+  bucketFullLabel,
   getNetwork,
   getInfluencers,
   getPropagation,

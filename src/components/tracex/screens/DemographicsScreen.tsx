@@ -587,6 +587,7 @@ export function DemographicsScreen() {
                 <XAxis
                   dataKey="hour"
                   interval={3}
+                  tickFormatter={(h: string) => `${String(h).padStart(2, "0")}:00`}
                   tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                   axisLine={{ stroke: chartTheme.grid }}
                   tickLine={false}

@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "@/lib/app-state";
 import { getClaims, getTopicById, NOW, type Claim, type ClaimStatus } from "@/lib/mock";
-import { fmtCompact, fmtDateIST, fmtFull, relTime, riskTone } from "@/lib/fmt";
+import { fmtCompact, fmtDateIST, fmtFull, relTime, riskTone, fmtStamp } from "@/lib/fmt";
 import {
   Panel,
   Badge,
@@ -178,6 +178,20 @@ function ClaimDossier({ claim }: { claim: Claim }) {
     () => claim.spread.map((p) => ({ ...p, cum: p.xReach + p.tgReach })),
     [claim]
   );
+  /* bucket-aligned tick hours for the propagation axis — the labels are the
+     real wall-clock timestamps of firstSeen + hour, not bare offsets */
+  const spreadTicks = useMemo(() => {
+    const n = spreadData.length;
+    if (n < 2) return spreadData.map((p) => p.hour);
+    const count = Math.min(4, n);
+    const out: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const h = spreadData[Math.round((i * (n - 1)) / (count - 1))].hour;
+      if (!out.includes(h)) out.push(h);
+    }
+    return out;
+  }, [spreadData]);
+  const stampAt = (h: number) => fmtStamp(claim.firstSeen + h * 3.6e6);
   const peak = useMemo(
     () => spreadData.reduce((a, b) => (b.cum > a.cum ? b : a), spreadData[0]),
     [spreadData]
@@ -271,7 +285,15 @@ function ClaimDossier({ claim }: { claim: Claim }) {
       {/* spread map — the centerpiece */}
       <div className="mt-4 pt-3 border-t border-border/60">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Taxonomy>Cross-platform propagation</Taxonomy>
+          <div className="flex items-baseline gap-2 min-w-0">
+            <Taxonomy>Cross-platform propagation</Taxonomy>
+            <span
+              className="font-mono text-[9px] text-muted-foreground/70 whitespace-nowrap"
+              title={`Hours measured from first detection · ${fmtDateIST(claim.firstSeen)} IST`}
+            >
+              T0 {fmtStamp(claim.firstSeen)}
+            </span>
+          </div>
           <Legend
             items={[
               { label: "X reach", color: CHART.orange },
@@ -297,8 +319,8 @@ function ClaimDossier({ claim }: { claim: Claim }) {
               <XAxis
                 dataKey="hour"
                 type="category"
-                tickFormatter={(h: number) => `${h}h`}
-                minTickGap={28}
+                ticks={spreadTicks}
+                tickFormatter={(h: number) => stampAt(h)}
                 tick={{ fontSize: 10, fill: chartTheme.tick, fontFamily: "var(--font-jetbrains), monospace" }}
                 axisLine={{ stroke: chartTheme.grid }}
                 tickLine={false}
@@ -322,7 +344,11 @@ function ClaimDossier({ claim }: { claim: Claim }) {
                     <ChartTooltip
                       active={p.active}
                       payload={p.payload}
-                      label={p.label !== undefined ? `${p.label}h` : ""}
+                      label={
+                        p.label !== undefined && p.label !== ""
+                          ? `T+${p.label}h · ${stampAt(Number(p.label))}`
+                          : ""
+                      }
                       format={(entry) =>
                         typeof entry.value === "number" ? fmtCompact(entry.value) : String(entry.value)
                       }
