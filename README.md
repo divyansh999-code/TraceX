@@ -23,7 +23,11 @@
 ![Plotly](https://img.shields.io/badge/Plotly-3F4F75?style=flat-square&logo=plotly&logoColor=white)
 
 <br/>
+⚠️ Prototype — Work in Progress
 
+This is an early prototype and **not the final product**. Some features are still under development and may be incomplete, unstable, or not function as intended.
+
+The project is actively being improved, with additional features, fixes, and refinements planned.
 
 </div>
 
