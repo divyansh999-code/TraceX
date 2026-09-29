@@ -82,7 +82,7 @@ TraceX is organised into eight modules, reachable from one sidebar. Every screen
 
 One operating view across X and Telegram: posts tracked, active narratives, average sentiment, high-risk alerts, a live alert feed, and pipeline health.
 
-<img src="docs/screenshots/01-overview.png" alt="Mission Control" width="100%"/>
+<img width="807" height="440" alt="Image" src="https://github.com/user-attachments/assets/fa4e9c3f-c293-4f1b-b309-ece9ff065157" />
 
 <br/>
 
@@ -90,7 +90,7 @@ One operating view across X and Telegram: posts tracked, active narratives, aver
 
 Emerging narratives are ranked by growth against a historical baseline, each with a **risk score**. A filterable table tracks keywords and hashtags by volume, 24-hour change, platform split, and risk.
 
-<img src="docs/screenshots/02-trends.png" alt="Trend Explorer" width="100%"/>
+<img width="807" height="436" alt="Image" src="https://github.com/user-attachments/assets/66d65b61-4615-4ccb-a162-80b3bc263c98" />
 
 <br/>
 
@@ -98,7 +98,7 @@ Emerging narratives are ranked by growth against a historical baseline, each wit
 
 Positive, neutral and negative composition over 30 days, with automatic **shift-event detection** and a six-class emotion model: support, opposition, anxiety, anger, joy and curiosity.
 
-<img src="docs/screenshots/03-sentiment.png" alt="Sentiment and Emotion" width="100%"/>
+<img width="810" height="436" alt="Image" src="https://github.com/user-attachments/assets/8a431afb-5a36-4588-aa17-44bcf5e09ea8" />
 
 <br/>
 
@@ -106,7 +106,7 @@ Positive, neutral and negative composition over 30 days, with automatic **shift-
 
 Who is in the conversation, at cohort level only: state-level geography, age brackets, interests, and a language split that treats **Hinglish as a first-class category**. Every figure is aggregated with k-anonymity of at least 50.
 
-<img src="docs/screenshots/04-demographics.png" alt="Demographics and Audience Cohorts" width="100%"/>
+<img width="811" height="437" alt="Image" src="https://github.com/user-attachments/assets/554b5a63-52d5-472f-a53a-faae4f0f8ffe" />
 
 <br/>
 
@@ -114,7 +114,7 @@ Who is in the conversation, at cohort level only: state-level geography, age bra
 
 Replies, mentions and reposts become a directed graph. **PageRank** sizes influence, **Louvain** colours communities, and a propagation trace highlights how a narrative cascades between groups. Bot-linked nodes are flagged directly on the graph.
 
-<img src="docs/screenshots/05-network.png" alt="Interaction Graph and Influence" width="100%"/>
+<img width="955" height="474" alt="Image" src="https://github.com/user-attachments/assets/4dd37635-3458-4c98-a260-d3e58b0e001a" />
 
 <br/>
 
@@ -122,7 +122,7 @@ Replies, mentions and reposts become a directed graph. **PageRank** sizes influe
 
 Accounts are scored from 0 to 1 using behavioural signals: posting frequency, account age, duplicate content and timing patterns. A second tab tracks claim-level misinformation, correlating risk with bot activity and spread pattern.
 
-<img src="docs/screenshots/06-bot-detection.png" alt="Information Integrity" width="100%"/>
+<img width="789" height="376" alt="Image" src="https://github.com/user-attachments/assets/cc807c5e-bf09-4f36-8c18-21e76f771eb2" />
 
 <br/>
 
@@ -130,7 +130,7 @@ Accounts are scored from 0 to 1 using behavioural signals: posting frequency, ac
 
 Every detection lands in one triage log with severity, type and status filters. Analysts can export CSV logs and generate intelligence briefs that bundle KPIs, findings, bot clusters and the misinformation dossier.
 
-<img src="docs/screenshots/07-alerts.png" alt="Alerts and Reports" width="100%"/>
+<img width="954" height="470" alt="Image" src="https://github.com/user-attachments/assets/f6190a44-67f0-464f-9c43-6c96c11f521f" />
 
 > **Note:** figures in the screenshots come from the prototype's demonstration dataset.
 
