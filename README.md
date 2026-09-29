@@ -24,7 +24,6 @@
 
 <br/>
 
-<img src="docs/screenshots/01-overview.png" alt="TraceX Mission Control" width="100%"/>
 
 </div>
 
