@@ -258,11 +258,6 @@ streamlit run app.py
 
 **Team Perplexus** · Smart India Hackathon 2026 · Problem Statement 26152
 
-| Name | Role | GitHub |
-|---|---|---|
-| _Your name_ | _Role_ | [@username](https://github.com/username) |
-| _Member 2_ | _Role_ | [@username](https://github.com/username) |
-
 <br/>
 
 <div align="center">
